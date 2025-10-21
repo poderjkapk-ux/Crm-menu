@@ -2026,6 +2026,11 @@ ADMIN_CLIENT_DETAIL_BODY = """
 # ... (весь ваш існуючий код до цього моменту) ...
 
 # ОНОВЛЕННИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
+# templates.py
+
+# ... (весь ваш існуючий код до IN_HOUSE_MENU_HTML_TEMPLATE) ...
+
+# ОНОВЛЕНИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
 IN_HOUSE_MENU_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -2046,19 +2051,14 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             --bg-color: #193223; --card-bg: #213A28; --text-color: #E5D5BF;
             --primary-color: #B1864B; --primary-hover-color: #c9a36b;
             --primary-glow-color: rgba(177, 134, 75, 0.3); --border-color: #4a635a;
-            --dark-text-for-accent: #193223; --side-padding: 15px;
+            --dark-text-for-accent: #193223; --side-padding: 20px;
         }}
         @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
         @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
+        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         html {{ scroll-behavior: smooth; }}
         body {{ font-family: 'Golos Text', sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); }}
-        .main-wrapper {{
-            max-width: 900px; /* NEW: Set a max-width for the content */
-            margin: 0 auto; /* NEW: Center the content */
-            background-color: var(--bg-color);
-            box-shadow: 0 0 40px rgba(0,0,0,0.5);
-        }}
         .container {{ width: 100%; margin: 0 auto; padding: 0; }}
         header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
         .header-logo {{ height: 100px; width: auto; }}
@@ -2096,30 +2096,31 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         .cart-item-controls span {{ margin: 0 10px; }}
         .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); }}
         .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
-        #place-order-btn {{ width: 100%; padding: 15px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; }}
-        #place-order-btn:disabled {{ background-color: #555; cursor: not-allowed; }}
+        #place-order-btn {{ width: 100%; padding: 15px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; position: relative; }}
+        #place-order-btn:disabled {{ background-color: #555; color: #888; cursor: not-allowed; }}
         #cart-toggle {{ position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; border-radius: 50%; width: 60px; height: 60px; cursor: pointer; z-index: 1001; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }}
         #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
         #cart-toggle svg {{ width: 28px; height: 28px; }}
         #cart-count {{ position: absolute; top: -5px; right: -5px; background: var(--primary-color); color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px; font-size: 0.8em; display: flex; justify-content: center; align-items: center; font-weight: 700; border: 2px solid var(--card-bg);}}
         .action-buttons {{ padding: 0 20px 20px; }}
-        .action-btn {{ width: 100%; padding: 15px; margin-bottom: 10px; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; border: 1px solid var(--primary-color); }}
+        .action-btn {{ width: 100%; padding: 15px; margin-bottom: 10px; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; border: 1px solid var(--primary-color); position: relative; }}
         .call-waiter-btn {{ background-color: transparent; color: var(--primary-color); }}
         .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
         .toast {{ position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background-color: #213A28; color: #E5D5BF; padding: 15px 25px; border-radius: 8px; z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s; pointer-events: none; border: 1px solid var(--primary-color); box-shadow: 0 0 20px var(--primary-glow-color); }}
         .toast.show {{ opacity: 1; transform: translateX(-50%) translateY(-20px); }}
+        .btn-spinner {{ display: none; border: 2px solid rgba(0,0,0,0.3); border-top: 2px solid var(--dark-text-for-accent); border-radius: 50%; width: 18px; height: 18px; animation: spin 0.8s linear infinite; }}
+        button.working .btn-spinner {{ display: inline-block; }}
+        button.working span {{ vertical-align: middle; margin-left: 8px; }}
     </style>
 </head>
 <body>
-    <div class="main-wrapper">
-        <header>
-            {logo_html}
-            <h1>{table_name}</h1>
-        </header>
-        <div id="category-nav" class="category-nav"></div>
-        <div class="container" id="menu"></div>
-        <div style="height: 100px;"></div> 
-    </div>
+    <header>
+        {logo_html}
+        <h1>{table_name}</h1>
+    </header>
+    <div id="category-nav" class="category-nav"></div>
+    <div class="container" id="menu"></div>
+    <div style="height: 100px;"></div> 
     <button id="cart-toggle">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z"></path></svg>
         <span id="cart-count">0</span>
@@ -2135,11 +2136,11 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                 <span>Всього:</span>
                 <span id="cart-total-price">0 грн</span>
             </div>
-            <button id="place-order-btn" disabled>Замовити</button>
+            <button id="place-order-btn" disabled><div class="btn-spinner"></div><span>Замовити</span></button>
         </div>
         <div class="action-buttons">
-            <button class="action-btn call-waiter-btn">Викликати офіціанта</button>
-            <button class="action-btn request-bill-btn">Попросити рахунок</button>
+            <button class="action-btn call-waiter-btn"><div class="btn-spinner"></div><span>Викликати офіціанта</span></button>
+            <button class="action-btn request-bill-btn"><div class="btn-spinner"></div><span>Попросити рахунок</span></button>
         </div>
     </aside>
     <div id="toast" class="toast"></div>
@@ -2166,7 +2167,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                 toastEl.classList.add('show');
                 setTimeout(() => {{
                     toastEl.classList.remove('show');
-                }}, 3000);
+                }}, 4000); // Increased timeout to 4 seconds
             }};
 
             const updateCartView = () => {{
@@ -2281,25 +2282,37 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             cartToggle.addEventListener('click', () => cartSidebar.classList.add('open'));
             closeCartBtn.addEventListener('click', () => cartSidebar.classList.remove('open'));
 
-            document.querySelector('.call-waiter-btn').addEventListener('click', async () => {{
+            const handleApiButtonClick = async (button, apiUrl) => {{
+                button.disabled = true;
+                button.classList.add('working');
                 try {{
-                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/call_waiter`, {{ method: 'POST' }});
+                    const response = await fetch(apiUrl, {{ method: 'POST' }});
                     const result = await response.json();
                     showToast(result.message);
-                }} catch (error) {{ showToast('Не вдалося викликати офіціанта.'); }}
+                }} catch (error) {{
+                    showToast('Сталася помилка. Спробуйте ще раз.');
+                }} finally {{
+                    button.disabled = false;
+                    button.classList.remove('working');
+                }}
+            }};
+
+            document.querySelector('.call-waiter-btn').addEventListener('click', (e) => {{
+                handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/call_waiter`);
             }});
             
-            document.querySelector('.request-bill-btn').addEventListener('click', async () => {{
-                 try {{
-                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/request_bill`, {{ method: 'POST' }});
-                    const result = await response.json();
-                    showToast(result.message);
-                }} catch (error) {{ showToast('Не вдалося попросити рахунок.'); }}
+            document.querySelector('.request-bill-btn').addEventListener('click', (e) => {{
+                handleApiButtonClick(e.currentTarget, `/api/menu/table/${{TABLE_ID}}/request_bill`);
             }});
 
-            placeOrderBtn.addEventListener('click', async () => {{
+            placeOrderBtn.addEventListener('click', async (e) => {{
+                const button = e.currentTarget;
                 const items = Object.values(cart);
                 if (items.length === 0) return;
+                
+                button.disabled = true;
+                button.classList.add('working');
+
                 try {{
                     const response = await fetch(`/api/menu/table/${{TABLE_ID}}/place_order`, {{
                         method: 'POST',
@@ -2315,6 +2328,9 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     }}
                 }} catch (error) {{
                     showToast('Помилка при відправці замовлення.');
+                }} finally {{
+                    button.disabled = false;
+                    button.classList.remove('working');
                 }}
             }});
             
