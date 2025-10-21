@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from aiogram import Bot, html as aiogram_html
+# NEW: Import keyboard builder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 
 from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory
 from dependencies import get_db_session
@@ -130,33 +132,23 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
     total_price = sum(item.get('price', 0) * item.get('quantity', 0) for item in items)
     products_str = ", ".join([f"{item['name']} x {item['quantity']}" for item in items])
     
-    # Створюємо замовлення в базі даних
     order = Order(
-        customer_name=f"Стіл: {table.name}",
-        phone_number=f"table_{table.id}",
-        address=None,
-        products=products_str,
-        total_price=total_price,
-        is_delivery=False,
-        delivery_time="In House",
-        order_type="in_house",
-        table_id=table.id,
-        status_id=1 # Нове замовлення
+        customer_name=f"Стіл: {table.name}", phone_number=f"table_{table.id}",
+        address=None, products=products_str, total_price=total_price,
+        is_delivery=False, delivery_time="In House", order_type="in_house",
+        table_id=table.id, status_id=1
     )
     session.add(order)
     await session.commit()
     await session.refresh(order)
     
-    # Додаємо запис в історію
     history_entry = OrderStatusHistory(
-        order_id=order.id,
-        status_id=order.status_id,
+        order_id=order.id, status_id=order.status_id,
         actor_info=f"Гість за столиком {table.name}"
     )
     session.add(history_entry)
     await session.commit()
 
-    # Надсилаємо сповіщення
     order_details_text = (f"📝 <b>Нове замовлення зі столика: {aiogram_html.bold(table.name)} (ID: #{order.id})</b>\n\n"
                           f"<b>Склад:</b>\n- " + aiogram_html.quote(products_str.replace(", ", "\n- ")) +
                           f"\n\n<b>Сума:</b> {total_price} грн")
@@ -164,6 +156,10 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
     admin_bot = await get_admin_bot(session)
     if not admin_bot:
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
+
+    # NEW: Add management buttons for waiter
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="⚙️ Керувати замовленням", callback_data=f"waiter_manage_order_{order.id}"))
 
     try:
         waiter = table.assigned_waiter
@@ -178,7 +174,7 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
                 order_details_text = f"❗️ <b>Замовлення з вільного столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n" + order_details_text
 
         if target_chat_id:
-            await admin_bot.send_message(target_chat_id, order_details_text)
+            await admin_bot.send_message(target_chat_id, order_details_text, reply_markup=kb.as_markup())
             return JSONResponse(content={"message": "Замовлення прийнято! Офіціант незабаром його підтвердить.", "order_id": order.id})
         else:
             raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
