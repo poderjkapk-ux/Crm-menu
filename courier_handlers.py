@@ -320,7 +320,9 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
         # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
         if order.phone_number:
-            clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
+            clean_phone = re.sub(r'[^0-9\+]', '', order.phone_number)
+            if clean_phone and clean_phone[0] != '+':
+                 clean_phone = '+' + clean_phone
             kb.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
 
         if order.is_delivery and order.address:
