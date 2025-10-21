@@ -2057,70 +2057,188 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
         @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
         @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-        html {{ scroll-behavior: smooth; }}
-        body {{ font-family: 'Golos Text', sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); }}
+        html {{ scroll-behavior: smooth; overflow-y: scroll; }}
+        body {{
+            font-family: 'Golos Text', sans-serif;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            background-image: url('data:image/svg+xml,%3Csvg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"%3E%3Cpath d="M25 50 C25 25, 75 25, 75 50 C75 75, 25 75, 25 50 Z M50 25 C75 25, 75 75, 50 75 C25 75, 25 25, 50 25 Z" fill="none" stroke="%23E5D5BF" stroke-width="0.5" opacity="0.05"/%3E%3C/svg%3E');
+        }}
         .container {{ width: 100%; margin: 0 auto; padding: 0; }}
         header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
+        .header-logo-container {{ display: inline-block; margin-bottom: 25px; }}
         .header-logo {{ height: 100px; width: auto; }}
-        header h1 {{ font-family: 'Playfair Display', serif; font-size: 2.5em; color: var(--primary-color); margin: 10px 0 0; }}
-        .category-nav {{ display: flex; position: sticky; top: -1px; background-color: rgba(25, 50, 35, 0.9); backdrop-filter: blur(12px); z-index: 100; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; box-shadow: 0 4px 20px rgba(0,0,0,0.4); padding: 15px 0; }}
+        header h1 {{
+            font-family: 'Playfair Display', serif; font-size: clamp(2.5em, 5vw, 3.5em);
+            color: var(--text-color); margin: 0; font-weight: 700;
+            background: linear-gradient(145deg, #E5D5BF, #B1864B);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }}
+        header p {{
+            font-family: 'Golos Text', sans-serif; font-size: clamp(1em, 2vw, 1.2em);
+            color: #bbb; margin-top: 10px; letter-spacing: 4px; text-transform: uppercase;
+        }}
+        .table-name-header {{
+            font-family: 'Golos Text', sans-serif; font-size: clamp(1.2em, 2.5vw, 1.5em);
+            color: var(--primary-color); margin-top: 20px;
+        }}
+
+        .category-nav {{
+            display: flex; position: sticky; top: -1px;
+            background-color: rgba(25, 50, 35, 0.9); backdrop-filter: blur(12px);
+            z-index: 100; animation: fadeIn 0.5s ease-out; overflow-x: auto;
+            white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            border-top: 1px solid rgba(229, 213, 191, 0.1);
+            border-bottom: 1px solid rgba(0,0,0,0.2);
+            width: 100%; padding: 15px 0;
+        }}
         .category-nav::-webkit-scrollbar {{ display: none; }}
-        .category-nav a {{ color: var(--text-color); text-decoration: none; padding: 10px 25px; border: 1px solid var(--border-color); border-radius: 20px; transition: all 0.3s ease; font-weight: 500; flex-shrink: 0; margin: 0 10px; }}
-        .category-nav a:first-child {{ margin-left: var(--side-padding); }} .category-nav a:last-child {{ margin-right: var(--side-padding); }}
-        .category-nav a.active, .category-nav a:hover {{ background-color: var(--primary-color); color: var(--dark-text-for-accent); border-color: var(--primary-color); }}
+        .category-nav a {{
+            color: var(--text-color); text-decoration: none; padding: 10px 25px;
+            border: 1px solid var(--border-color); border-radius: 20px;
+            transition: all 0.3s ease; font-weight: 500; flex-shrink: 0; margin: 0 10px;
+        }}
+        .category-nav a:first-child {{ margin-left: var(--side-padding); }}
+        .category-nav a:last-child {{ margin-right: var(--side-padding); }}
+        .category-nav a:hover, .category-nav a.active {{
+            background-color: var(--primary-color); color: var(--dark-text-for-accent);
+            border-color: var(--primary-color); transform: scale(1.05); font-weight: 600;
+            box-shadow: 0 0 15px var(--primary-glow-color);
+        }}
+        
         #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); }}
-        .category-section {{ padding-top: 90px; margin-top: -90px; }}
-        .category-title {{ font-family: 'Playfair Display', serif; font-size: 2.2em; color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px; text-align: center; border-bottom: 1px solid var(--border-color); }}
-        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }}
-        .product-card {{ background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; animation: fadeIn 0.5s ease-out forwards; opacity: 0; }}
-        .product-image {{ width: 100%; height: 200px; object-fit: cover; }}
-        .product-info {{ padding: 20px; flex-grow: 1; display: flex; flex-direction: column; }}
-        .product-name {{ font-family: 'Playfair Display', serif; font-size: 1.5em; margin: 0 0 10px; }}
-        .product-desc {{ font-size: 0.9em; color: #bbb; margin: 0 0 20px; flex-grow: 1; }}
+        .category-section {{ margin-bottom: 30px; padding-top: 90px; margin-top: -90px; }}
+        .category-title {{
+            font-family: 'Playfair Display', serif; font-size: clamp(2.2em, 4vw, 2.8em);
+            color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px;
+            text-align: center; border-bottom: 1px solid var(--border-color); position: relative;
+        }}
+        .category-title::after {{
+            content: ''; position: absolute; bottom: -1px; left: 50%;
+            transform: translateX(-50%); width: 100px; height: 2px;
+            background-color: var(--primary-color); box-shadow: 0 0 10px var(--primary-glow-color);
+        }}
+        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }}
+        .product-card {{
+            background-color: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            animation: fadeIn 0.5s ease-out forwards; opacity: 0;
+        }}
+        .product-card:hover {{
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5), 0 0 20px var(--primary-glow-color);
+            border-color: var(--primary-color);
+        }}
+        .product-image-wrapper {{ width: 100%; height: 220px; position: relative; overflow: hidden; }}
+        .product-image {{ width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }}
+        .product-card:hover .product-image {{ transform: scale(1.1); }}
+        .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
+        .product-name {{ font-family: 'Playfair Display', serif; font-size: 1.7em; margin: 0 0 10px; }}
+        .product-desc {{ font-size: 0.9em; color: #bbb; margin: 0 0 20px; flex-grow: 1; line-height: 1.6; }}
         .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
-        .product-price {{ font-family: 'Playfair Display', serif; font-size: 1.6em; color: var(--primary-color); }}
-        .add-to-cart-btn {{ background: var(--primary-color); color: var(--dark-text-for-accent); border: none; padding: 10px 18px; border-radius: 5px; cursor: pointer; font-weight: 600; transition: background-color 0.3s; }}
+        .product-price {{ font-family: 'Playfair Display', serif; font-size: 1.8em; color: var(--primary-color); }}
+        .add-to-cart-btn {{
+            background: var(--primary-color); color: var(--dark-text-for-accent);
+            border: none; padding: 12px 22px; border-radius: 5px; cursor: pointer;
+            font-weight: 600; font-size: 0.9em; transition: all 0.3s ease;
+        }}
         .add-to-cart-btn.added {{ background-color: #0c8a5d; color: white; }}
-        #cart-sidebar {{ position: fixed; top: 0; right: -100%; width: 100%; max-width: 420px; height: 100%; background-color: rgba(25, 50, 35, 0.85); backdrop-filter: blur(15px); border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.5); transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000; }}
+        .add-to-cart-btn:hover {{
+            background-color: var(--primary-hover-color); transform: scale(1.05);
+            box-shadow: 0 0 15px var(--primary-glow-color);
+        }}
+        
+        #cart-sidebar {{
+            position: fixed; top: 0; right: -100%; width: 100%; max-width: 420px; height: 100%;
+            background-color: rgba(25, 50, 35, 0.85); backdrop-filter: blur(15px);
+            border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.5);
+            transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000;
+        }}
         #cart-sidebar.open {{ right: 0; }}
         .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
         .cart-header h2 {{ margin: 0; color: var(--primary-color); font-family: 'Playfair Display', serif;}}
-        #close-cart-btn {{ background: none; border: none; color: white; font-size: 2.5em; cursor: pointer; line-height: 1; }}
+        #close-cart-btn {{ background: none; border: none; color: white; font-size: 2.5em; cursor: pointer; line-height: 1; transition: transform 0.2s ease, color 0.2s ease;}}
+        #close-cart-btn:hover {{ color: var(--primary-color); transform: rotate(90deg); }}
         .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
         .cart-item {{ animation: popIn 0.3s ease-out; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }}
-        .cart-item-info {{ flex-grow: 1; }}
-        .cart-item-name {{ font-weight: 600; }}
+        .cart-item-info {{ flex-grow: 1; }} .cart-item-name {{ font-weight: 600; }}
         .cart-item-price {{ color: #ccc; font-size: 0.9em; }}
         .cart-item-controls {{ display: flex; align-items: center; }}
         .cart-item-controls button {{ background: #333; border: 1px solid var(--border-color); color: var(--text-color); width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
         .cart-item-controls span {{ margin: 0 10px; }}
         .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); }}
         .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
-        #place-order-btn {{ width: 100%; padding: 15px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; position: relative; }}
-        #place-order-btn:disabled {{ background-color: #555; color: #888; cursor: not-allowed; }}
-        #cart-toggle {{ position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; border-radius: 50%; width: 60px; height: 60px; cursor: pointer; z-index: 1001; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }}
+        .action-buttons {{ padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px; }}
+        .action-btn, #place-order-btn {{
+            width: 100%; padding: 15px; font-size: 1.1em; cursor: pointer; border-radius: 5px;
+            font-weight: 700; border: 1px solid var(--primary-color); display: flex;
+            align-items: center; justify-content: center; gap: 10px;
+            transition: all 0.3s ease;
+        }}
+        .action-btn svg, #place-order-btn svg {{ width: 20px; height: 20px; }}
+        #place-order-btn {{ background-color: var(--primary-color); color: var(--dark-text-for-accent); border-color: var(--primary-color); }}
+        #place-order-btn:hover:not(:disabled) {{ background-color: var(--primary-hover-color); box-shadow: 0 0 15px var(--primary-glow-color); }}
+        #place-order-btn:disabled {{ background-color: #555; color: #888; cursor: not-allowed; border-color: #555; }}
+        .call-waiter-btn, .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
+        .call-waiter-btn:hover, .request-bill-btn:hover {{ background-color: rgba(177, 134, 75, 0.1); }}
+
+        #cart-toggle {{
+            position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color);
+            color: var(--dark-text-for-accent); border: none; border-radius: 50%;
+            width: 60px; height: 60px; cursor: pointer; z-index: 1001;
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4); transition: all 0.3s ease;
+        }}
         #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
         #cart-toggle svg {{ width: 28px; height: 28px; }}
-        #cart-count {{ position: absolute; top: -5px; right: -5px; background: var(--primary-color); color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px; font-size: 0.8em; display: flex; justify-content: center; align-items: center; font-weight: 700; border: 2px solid var(--card-bg);}}
-        .action-buttons {{ padding: 0 20px 20px; }}
-        .action-btn {{ width: 100%; padding: 15px; margin-bottom: 10px; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; border: 1px solid var(--primary-color); position: relative; }}
-        .call-waiter-btn {{ background-color: transparent; color: var(--primary-color); }}
-        .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
-        .toast {{ position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background-color: #213A28; color: #E5D5BF; padding: 15px 25px; border-radius: 8px; z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s; pointer-events: none; border: 1px solid var(--primary-color); box-shadow: 0 0 20px var(--primary-glow-color); }}
+        #cart-toggle:hover {{ transform: scale(1.1); background-color: var(--primary-hover-color); }}
+        #cart-count {{
+            position: absolute; top: -5px; right: -5px; background: var(--primary-color);
+            color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px;
+            font-size: 0.8em; display: flex; justify-content: center; align-items: center;
+            font-weight: 700; border: 2px solid var(--card-bg);
+        }}
+        .toast {{
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            background-color: #213A28; color: #E5D5BF; padding: 15px 25px; border-radius: 8px;
+            z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s;
+            pointer-events: none; border: 1px solid var(--primary-color);
+            box-shadow: 0 0 20px var(--primary-glow-color);
+        }}
         .toast.show {{ opacity: 1; transform: translateX(-50%) translateY(-20px); }}
-        .btn-spinner {{ display: none; border: 2px solid rgba(0,0,0,0.3); border-top: 2px solid var(--dark-text-for-accent); border-radius: 50%; width: 18px; height: 18px; animation: spin 0.8s linear infinite; }}
+        .btn-spinner {{
+            display: none; border: 2px solid rgba(0,0,0,0.3);
+            border-top: 2px solid var(--dark-text-for-accent);
+            border-radius: 50%; width: 18px; height: 18px;
+            animation: spin 0.8s linear infinite;
+        }}
         button.working .btn-spinner {{ display: inline-block; }}
-        button.working span {{ vertical-align: middle; margin-left: 8px; }}
+        button.working span {{ vertical-align: middle; }}
+        footer {{ text-align: center; padding: 40px var(--side-padding) 20px; margin-top: auto; color: #888; font-size: 0.9em; }}
+        #loader {{ display: flex; justify-content: center; align-items: center; height: 80vh; }}
+        .spinner {{ border: 5px solid var(--border-color); border-top: 5px solid var(--primary-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }}
     </style>
 </head>
 <body>
     <header>
-        {logo_html}
-        <h1>{table_name}</h1>
+        <div class="header-logo-container">
+            {logo_html}
+        </div>
+        <h1>DAYBERG</h1>
+        <p>RESTAURANT</p>
+        <h2 class="table-name-header">{table_name}</h2>
     </header>
-    <div id="category-nav" class="category-nav"></div>
-    <div class="container" id="menu"></div>
-    <div style="height: 100px;"></div> 
+    <div class="container">
+        <nav id="category-nav" class="category-nav"></nav>
+        <main id="menu">
+            <div id="loader"><div class="spinner"></div></div>
+        </main>
+    </div>
+    <div style="height: 100px;"></div>
+    
     <button id="cart-toggle">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z"></path></svg>
         <span id="cart-count">0</span>
@@ -2136,14 +2254,27 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                 <span>Всього:</span>
                 <span id="cart-total-price">0 грн</span>
             </div>
-            <button id="place-order-btn" disabled><div class="btn-spinner"></div><span>Замовити</span></button>
+            <button id="place-order-btn" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Замовити</span>
+            </button>
         </div>
         <div class="action-buttons">
-            <button class="action-btn call-waiter-btn"><div class="btn-spinner"></div><span>Викликати офіціанта</span></button>
-            <button class="action-btn request-bill-btn"><div class="btn-spinner"></div><span>Попросити рахунок</span></button>
+            <button class="action-btn call-waiter-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Викликати офіціанта</span>
+            </button>
+            <button class="action-btn request-bill-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3.375m-3.375 2.25h10.5m4.5 0a4.5 4.5 0 00-4.5-4.5h-2.25a4.5 4.5 0 00-4.5 4.5v2.25a4.5 4.5 0 004.5 4.5h2.25a4.5 4.5 0 004.5-4.5v-2.25z" /></svg>
+                <div class="btn-spinner"></div>
+                <span>Попросити рахунок</span>
+            </button>
         </div>
     </aside>
     <div id="toast" class="toast"></div>
+    <footer><p>&copy; 2024 DAYBERG RESTAURANT. Всі права захищені.</p></footer>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {{
@@ -2161,13 +2292,14 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             const cartCountEl = document.getElementById('cart-count');
             const placeOrderBtn = document.getElementById('place-order-btn');
             const toastEl = document.getElementById('toast');
+            const loader = document.getElementById('loader');
             
             const showToast = (message) => {{
                 toastEl.textContent = message;
                 toastEl.classList.add('show');
                 setTimeout(() => {{
                     toastEl.classList.remove('show');
-                }}, 4000); // Increased timeout to 4 seconds
+                }}, 4000);
             }};
 
             const updateCartView = () => {{
@@ -2206,10 +2338,12 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             const renderMenu = (data) => {{
                 menuContainer.innerHTML = '';
                 categoryNav.innerHTML = '';
+                loader.style.display = 'none';
                 data.categories.forEach((category, index) => {{
                     const navLink = document.createElement('a');
                     navLink.href = `#category-${{category.id}}`;
                     navLink.textContent = category.name;
+                    if (index === 0) navLink.classList.add('active');
                     categoryNav.appendChild(navLink);
 
                     const categorySection = document.createElement('section');
@@ -2225,7 +2359,9 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                         productCard.className = 'product-card';
                         productCard.style.animationDelay = `${{pIndex * 0.05}}s`;
                         productCard.innerHTML = `
-                            <img src="/${{product.image_url || 'static/images/placeholder.jpg'}}" alt="${{product.name}}" class="product-image">
+                            <div class="product-image-wrapper">
+                                <img src="/${{product.image_url || 'static/images/placeholder.jpg'}}" alt="${{product.name}}" class="product-image">
+                            </div>
                             <div class="product-info">
                                 <h3 class="product-name">${{product.name}}</h3>
                                 <p class="product-desc">${{product.description || ''}}</p>
@@ -2239,6 +2375,24 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     categorySection.appendChild(productsGrid);
                     menuContainer.appendChild(categorySection);
                 }});
+                setupScrollspy();
+            }};
+
+            const setupScrollspy = () => {{
+                const navLinks = categoryNav.querySelectorAll('a');
+                const sections = document.querySelectorAll('.category-section');
+                const observer = new IntersectionObserver((entries) => {{
+                    entries.forEach(entry => {{
+                        if (entry.isIntersecting) {{
+                            const id = entry.target.getAttribute('id');
+                            const activeLink = document.querySelector(`.category-nav a[href="#${{id}}"]`);
+                            navLinks.forEach(link => link.classList.remove('active'));
+                            activeLink.classList.add('active');
+                            activeLink.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'center' }});
+                        }}
+                    }});
+                }}, {{ root: null, rootMargin: '-40% 0px -60% 0px', threshold: 0 }});
+                sections.forEach(section => observer.observe(section));
             }};
             
             menuContainer.addEventListener('click', e => {{
@@ -2248,9 +2402,7 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
                     if (cart[id]) {{
                         cart[id].quantity++;
                     }} else {{
-                        cart[id] = {{
-                            id: id, name: button.dataset.name, price: parseInt(button.dataset.price), quantity: 1
-                        }};
+                        cart[id] = {{ id: id, name: button.dataset.name, price: parseInt(button.dataset.price), quantity: 1 }};
                     }}
                     updateCartView();
                     cartToggle.classList.add('popping');
@@ -2267,16 +2419,15 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             cartItemsContainer.addEventListener('click', e => {{
                 const target = e.target;
                 const id = target.dataset.id;
-                if (!id) return;
-                if (target.classList.contains('change-quantity')) {{
-                    if (target.textContent === '+') {{
-                        cart[id].quantity++;
-                    }} else {{
-                        cart[id].quantity--;
-                        if (cart[id].quantity === 0) delete cart[id];
-                    }}
-                    updateCartView();
+                if (!id || !target.classList.contains('change-quantity')) return;
+                
+                if (target.textContent === '+') {{
+                    cart[id].quantity++;
+                }} else {{
+                    cart[id].quantity--;
+                    if (cart[id].quantity === 0) delete cart[id];
                 }}
+                updateCartView();
             }});
             
             cartToggle.addEventListener('click', () => cartSidebar.classList.add('open'));
