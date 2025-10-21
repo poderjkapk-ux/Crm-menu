@@ -1,6 +1,7 @@
 # courier_handlers.py
 
 import logging
+import html as html_module
 from aiogram import Dispatcher, F, html, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -93,7 +94,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
             status_name = order.status.name if order.status else "Невідомий"
             address_info = order.address if order.is_delivery else 'Самовивіз'
             text += (f"<b>Замовлення #{order.id}</b> ({status_name})\n"
-                     f"📍 Адреса: {html.quote(address_info)}\n"
+                     f"📍 Адреса: {html_module.escape(address_info)}\n"
                      f"💰 Сума: {order.total_price} грн\n\n")
             kb.row(InlineKeyboardButton(text=f"Дії по замовленню #{order.id}", callback_data=f"courier_view_order_{order.id}"))
         kb.adjust(1)
@@ -135,7 +136,7 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
         text += "За вами не закріплено жодного столика."
     else:
         for table in tables:
-            kb.add(InlineKeyboardButton(text=f"Столик: {html.escape(table.name)}", callback_data=f"waiter_view_table_{table.id}"))
+            kb.add(InlineKeyboardButton(text=f"Столик: {html_module.escape(table.name)}", callback_data=f"waiter_view_table_{table.id}"))
     kb.adjust(1)
     
     if is_callback:
@@ -301,10 +302,10 @@ def register_courier_handlers(dp_admin: Dispatcher):
         address_info = order.address if order.is_delivery else 'Самовивіз'
         text = (f"<b>Деталі замовлення #{order.id}</b>\n\n"
                 f"Статус: {status_name}\n"
-                f"Адреса: {html.quote(address_info)}\n"
-                f"Клієнт: {html.quote(order.customer_name)}\n"
-                f"Телефон: {html.quote(order.phone_number)}\n"
-                f"Склад: {html.quote(order.products)}\n"
+                f"Адреса: {html_module.escape(address_info)}\n"
+                f"Клієнт: {html_module.escape(order.customer_name)}\n"
+                f"Телефон: {html_module.escape(order.phone_number)}\n"
+                f"Склад: {html_module.escape(order.products)}\n"
                 f"Сума: {order.total_price} грн\n\n")
         
         kb = InlineKeyboardBuilder()
@@ -321,7 +322,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
-            map_query = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
+            map_query = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
             kb.row(InlineKeyboardButton(text="🗺️ Показати на карті", url=map_query))
 
         kb.row(InlineKeyboardButton(text="⬅️ До моїх замовлень", callback_data="show_courier_orders_list"))
@@ -385,7 +386,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         active_orders_res = await session.execute(select(Order).where(Order.table_id == table_id, Order.status_id.not_in(final_statuses)).options(joinedload(Order.status)))
         active_orders = active_orders_res.scalars().all()
 
-        text = f"<b>Столик: {html.escape(table.name)}</b>\n\nАктивні замовлення:\n"
+        text = f"<b>Столик: {html_module.escape(table.name)}</b>\n\nАктивні замовлення:\n"
         kb = InlineKeyboardBuilder()
         if not active_orders:
             text += "\n<i>Немає активних замовлень.</i>"
@@ -415,7 +416,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         """Генерує текст і клавіатуру для управління замовленням офіціантом."""
         await session.refresh(order, ['status'])
         status_name = order.status.name if order.status else 'Невідомий'
-        products_formatted = "- " + html.quote(order.products or '').replace(", ", "\n- ")
+        products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
 
         text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {order.table.name})\n\n"
                 f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
