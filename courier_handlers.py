@@ -14,7 +14,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload
 from typing import Dict, Any
 from urllib.parse import quote_plus
-import re # <--- ДОДАНО
+import re 
 
 from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table
 from notification_manager import notify_all_parties_on_status_change
@@ -302,7 +302,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
                 f"Статус: {status_name}\n"
                 f"Адреса: {html_module.escape(address_info)}\n"
                 f"Клієнт: {html_module.escape(order.customer_name)}\n"
-                f"Телефон: {html_module.escape(order.phone_number)}\n"
+                f"Телефон: {html_module.escape(order.phone_number)}\n" # Номер вже включено тут
                 f"Склад: {html_module.escape(order.products)}\n"
                 f"Сума: {order.total_price} грн\n\n")
         
@@ -318,12 +318,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         ]
         kb.row(*status_buttons)
         
-        # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
-        if order.phone_number:
-            clean_phone = re.sub(r'[^0-9\+]', '', order.phone_number)
-            if clean_phone and clean_phone[0] != '+':
-                 clean_phone = '+' + clean_phone
-            kb.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
+        # ВИДАЛЕНО: Кнопка для дзвінка клієнту. Залишаємо лише текст у повідомленні.
 
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
