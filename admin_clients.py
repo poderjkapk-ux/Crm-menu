@@ -85,8 +85,12 @@ async def admin_clients_list(
         rows=rows or "<tr><td colspan='5'>Клиентов не найдено</td></tr>",
         pagination=pagination if pages > 1 else ""
     )
+    
+    # ВИПРАВЛЕНО: Додано відсутній ключ 'tables_active'
+    active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
+    active_classes["clients_active"] = "active"
 
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Клиенты", body=body, clients_active="active", **{k: "" for k in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active"]}))
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Клиенты", body=body, **active_classes))
 
 
 @router.get("/admin/client/{phone_number}", response_class=HTMLResponse)
@@ -107,7 +111,6 @@ async def admin_client_detail(
         .order_by(Order.id.desc())
     )
     
-    # ИЗМЕНЕНО: Добавлен .unique() для устранения ошибки дублирования
     orders = orders_res.unique().scalars().all()
 
     if not orders:
@@ -127,7 +130,6 @@ async def admin_client_detail(
         completed_by = o.completed_by_courier.full_name if o.completed_by_courier else "<i>Не завершено курьером</i>"
         
         history_log = "<ul class='status-history'>"
-        # Сортируем историю по времени, так как eager loading не гарантирует порядок
         for h in sorted(o.history, key=lambda x: x.timestamp):
             timestamp = h.timestamp.strftime('%d.%m.%Y %H:%M')
             history_log += f"<li><b>{h.status.name}</b> ({html.escape(h.actor_info)}) - {timestamp}</li>"
@@ -164,5 +166,8 @@ async def admin_client_detail(
         order_rows="".join(order_rows)
     )
 
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Клиент: {html.escape(client_name)}", body=body, clients_active="active", **{k: "" for k in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active"]}))
+    # ВИПРАВЛЕНО: Додано відсутній ключ 'tables_active'
+    active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
+    active_classes["clients_active"] = "active"
 
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Клиент: {html.escape(client_name)}", body=body, **active_classes))
