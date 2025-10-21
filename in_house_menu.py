@@ -12,7 +12,7 @@ from aiogram import Bot, html as aiogram_html
 # NEW: Import keyboard builder
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 
-from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory
+from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory, Role
 from dependencies import get_db_session
 # Змінено: імпортуємо новий шаблон з templates.py
 from templates import IN_HOUSE_MENU_HTML_TEMPLATE
@@ -70,28 +70,63 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
 
     waiter = table.assigned_waiter
     message_text = f"❗️ <b>Виклик зі столика: {html_module.escape(table.name)}</b>"
-    
+
     admin_bot = await get_admin_bot(session)
     if not admin_bot:
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
     try:
-        target_chat_id = None
+        notified_ids = set()
+        notification_sent = False
+
         if waiter and waiter.telegram_user_id and waiter.is_on_shift:
-            target_chat_id = waiter.telegram_user_id
-        else:
+            try:
+                await admin_bot.send_message(waiter.telegram_user_id, message_text)
+                notified_ids.add(waiter.telegram_user_id)
+                notification_sent = True
+            except Exception as e:
+                logger.error(f"Failed to notify assigned waiter {waiter.id} for call from table {table.id}: {e}")
+
+        if not notification_sent:
+            waiter_role_res = await session.execute(select(Role).where(Role.can_serve_tables == True).limit(1))
+            waiter_role = waiter_role_res.scalar_one_or_none()
+
+            if waiter_role:
+                all_waiters_on_shift_res = await session.execute(
+                    select(Employee).where(
+                        Employee.role_id == waiter_role.id,
+                        Employee.is_on_shift == True,
+                        Employee.telegram_user_id.is_not(None)
+                    )
+                )
+                all_waiters_on_shift = all_waiters_on_shift_res.scalars().all()
+                
+                unassigned_text = f"{message_text}\n<i>Офіціанта не призначено або він не на зміні.</i>"
+
+                for w in all_waiters_on_shift:
+                    if w.telegram_user_id not in notified_ids:
+                        try:
+                            await admin_bot.send_message(w.telegram_user_id, unassigned_text)
+                            notification_sent = True
+                        except Exception as e:
+                            logger.error(f"Failed to notify waiter on shift {w.id} for call from table {table.id}: {e}")
+
+        if not notification_sent:
             settings = await session.get(Settings, 1)
             if settings and settings.admin_chat_id:
-                target_chat_id = settings.admin_chat_id
-                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
-        
-        if target_chat_id:
-            await admin_bot.send_message(target_chat_id, message_text)
-            return JSONResponse(content={"message": "Офіціанта сповіщено. Будь ласка, зачекайте."})
-        else:
-            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+                 fallback_text = f"{message_text}\n❗️<b>УВАГА: Немає офіціантів на зміні для обробки виклику.</b>"
+                 await admin_bot.send_message(settings.admin_chat_id, fallback_text)
+
+
+        return JSONResponse(content={"message": "Офіціанта сповіщено. Будь ласка, зачекайте."})
+
+    except Exception as e:
+        logger.critical(f"Critical error in call_waiter for table {table_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while processing the call.")
+
     finally:
-        await admin_bot.session.close()
+        if admin_bot:
+            await admin_bot.session.close()
 
 @router.post("/api/menu/table/{table_id}/request_bill", response_class=JSONResponse)
 async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_session)):
@@ -100,28 +135,62 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
 
     waiter = table.assigned_waiter
     message_text = f"💰 <b>Запит на розрахунок зі столика: {html_module.escape(table.name)}</b>"
-    
+
     admin_bot = await get_admin_bot(session)
     if not admin_bot:
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
     try:
-        target_chat_id = None
+        notified_ids = set()
+        notification_sent = False
+
         if waiter and waiter.telegram_user_id and waiter.is_on_shift:
-            target_chat_id = waiter.telegram_user_id
-        else:
+            try:
+                await admin_bot.send_message(waiter.telegram_user_id, message_text)
+                notified_ids.add(waiter.telegram_user_id)
+                notification_sent = True
+            except Exception as e:
+                logger.error(f"Failed to notify assigned waiter {waiter.id} for bill request from table {table.id}: {e}")
+
+        if not notification_sent:
+            waiter_role_res = await session.execute(select(Role).where(Role.can_serve_tables == True).limit(1))
+            waiter_role = waiter_role_res.scalar_one_or_none()
+
+            if waiter_role:
+                all_waiters_on_shift_res = await session.execute(
+                    select(Employee).where(
+                        Employee.role_id == waiter_role.id,
+                        Employee.is_on_shift == True,
+                        Employee.telegram_user_id.is_not(None)
+                    )
+                )
+                all_waiters_on_shift = all_waiters_on_shift_res.scalars().all()
+                
+                unassigned_text = f"{message_text}\n<i>Офіціанта не призначено або він не на зміні.</i>"
+
+                for w in all_waiters_on_shift:
+                    if w.telegram_user_id not in notified_ids:
+                        try:
+                            await admin_bot.send_message(w.telegram_user_id, unassigned_text)
+                            notification_sent = True
+                        except Exception as e:
+                            logger.error(f"Failed to notify waiter on shift {w.id} for bill request from table {table.id}: {e}")
+
+        if not notification_sent:
             settings = await session.get(Settings, 1)
             if settings and settings.admin_chat_id:
-                target_chat_id = settings.admin_chat_id
-                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
-        
-        if target_chat_id:
-            await admin_bot.send_message(target_chat_id, message_text)
-            return JSONResponse(content={"message": "Запит надіслано. Офіціант незабаром підійде з рахунком."})
-        else:
-            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+                 fallback_text = f"{message_text}\n❗️<b>УВАГА: Немає офіціантів на зміні для обробки запиту на розрахунок.</b>"
+                 await admin_bot.send_message(settings.admin_chat_id, fallback_text)
+
+        return JSONResponse(content={"message": "Запит надіслано. Офіціант незабаром підійде з рахунком."})
+
+    except Exception as e:
+        logger.critical(f"Critical error in request_bill for table {table_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while processing the request.")
+
     finally:
-        await admin_bot.session.close()
+        if admin_bot:
+            await admin_bot.session.close()
 
 @router.post("/api/menu/table/{table_id}/place_order", response_class=JSONResponse)
 async def place_in_house_order(table_id: int, items: list = Body(...), session: AsyncSession = Depends(get_db_session)):
@@ -163,20 +232,58 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
 
     try:
         waiter = table.assigned_waiter
-        target_chat_id = None
-        
+        notification_sent = False
+
+        # Try to notify the assigned waiter first
         if waiter and waiter.telegram_user_id and waiter.is_on_shift:
-            target_chat_id = waiter.telegram_user_id
-        else:
+            try:
+                await admin_bot.send_message(waiter.telegram_user_id, order_details_text, reply_markup=kb.as_markup())
+                notification_sent = True
+            except Exception as e:
+                logger.error(f"Failed to send order notification to assigned waiter {waiter.id}: {e}")
+
+
+        # If no assigned waiter or they are not on shift, notify all waiters on shift
+        if not notification_sent:
+            waiter_role_res = await session.execute(select(Role).where(Role.can_serve_tables == True).limit(1))
+            waiter_role = waiter_role_res.scalar_one_or_none()
+
+            if waiter_role:
+                all_waiters_on_shift_res = await session.execute(
+                    select(Employee).where(
+                        Employee.role_id == waiter_role.id,
+                        Employee.is_on_shift == True,
+                        Employee.telegram_user_id.is_not(None)
+                    )
+                )
+                all_waiters_on_shift = all_waiters_on_shift_res.scalars().all()
+
+                if all_waiters_on_shift:
+                    unassigned_text = f"❗️ <b>Замовлення з вільного столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n" + order_details_text
+                    for w in all_waiters_on_shift:
+                        try:
+                            await admin_bot.send_message(w.telegram_user_id, unassigned_text, reply_markup=kb.as_markup())
+                            notification_sent = True
+                        except Exception as e:
+                            logger.error(f"Failed to send order notification to waiter on shift {w.id}: {e}")
+
+        # Fallback to admin chat if no waiters could be notified
+        if not notification_sent:
             settings = await session.get(Settings, 1)
             if settings and settings.admin_chat_id:
-                target_chat_id = settings.admin_chat_id
-                order_details_text = f"❗️ <b>Замовлення з вільного столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n" + order_details_text
+                fallback_text = f"❗️ <b>УВАГА: Немає офіціантів на зміні для обробки замовлення зі столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n\n" + order_details_text
+                try:
+                    await admin_bot.send_message(settings.admin_chat_id, fallback_text, reply_markup=kb.as_markup())
+                except Exception as e:
+                    logger.error(f"Failed to send fallback notification to admin chat for order #{order.id}: {e}")
 
-        if target_chat_id:
-            await admin_bot.send_message(target_chat_id, order_details_text, reply_markup=kb.as_markup())
+
+        if notification_sent:
             return JSONResponse(content={"message": "Замовлення прийнято! Офіціант незабаром його підтвердить.", "order_id": order.id})
         else:
+             # This case is now handled by the fallback to admin_chat_id, but we keep a server response for safety
+            logger.error(f"Order #{order.id} for table {table.id} was placed, but no one could be notified.")
             raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+
     finally:
         await admin_bot.session.close()
