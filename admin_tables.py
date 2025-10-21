@@ -7,11 +7,11 @@ import json
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from models import Table, Employee, Role, table_waiter_association
-from templates import ADMIN_HTML_TEMPLATE, ADMIN_TABLES_BODY
+from models import Table, Employee, Role
+# ИСПРАВЛЕНИЕ: Не нужно импортировать 'table_waiter_association' здесь, SQLAlchemy обрабатывает это через relationship
 from dependencies import get_db_session, check_credentials
 from typing import List
 
@@ -27,7 +27,8 @@ async def admin_tables_list(
     tables_res = await session.execute(
         select(Table).options(joinedload(Table.assigned_waiters)).order_by(Table.name)
     )
-    tables = tables_res.scalars().all()
+    # ИСПРАВЛЕНО: Добавлен .unique() для обработки дубликатов из-за joinedload коллекции
+    tables = tables_res.unique().scalars().all()
     
     waiter_roles_res = await session.execute(select(Role.id).where(Role.can_serve_tables == True))
     waiter_role_ids = waiter_roles_res.scalars().all()
@@ -46,7 +47,6 @@ async def admin_tables_list(
 
     rows = []
     for table in tables:
-        # ИЗМЕНЕНО: Отображаем список официантов
         assigned_waiter_ids = [w.id for w in table.assigned_waiters]
         waiter_names = ", ".join(sorted([w.full_name for w in table.assigned_waiters])) or "<i>Не призначено</i>"
         rows.append(f"""
@@ -100,22 +100,23 @@ async def assign_waiter_to_table(
     username: str = Depends(check_credentials)
 ):
     """Призначає або знімає офіціанта зі столика."""
-    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters)])
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters), joinedload(Table.assigned_waiters, Employee.role)])
     if not table:
         raise HTTPException(status_code=404, detail="Столик не знайдено")
 
     form_data = await request.form()
-    waiter_ids = [int(val) for val in form_data.getlist("waiter_ids")]
+    waiter_ids_str = form_data.getlist("waiter_ids")
+    waiter_ids = [int(val) for val in waiter_ids_str]
     
-    # Полностью очищаем старые привязки
     table.assigned_waiters.clear()
     
-    # Добавляем новые
     if waiter_ids:
-        waiters_res = await session.execute(select(Employee).where(Employee.id.in_(waiter_ids)))
+        waiters_res = await session.execute(
+            select(Employee).where(Employee.id.in_(waiter_ids)).options(joinedload(Employee.role))
+        )
         waiters = waiters_res.scalars().all()
         for waiter in waiters:
-            if waiter.role.can_serve_tables:
+            if waiter.role and waiter.role.can_serve_tables:
                  table.assigned_waiters.append(waiter)
             
     await session.commit()
