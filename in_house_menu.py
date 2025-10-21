@@ -1,205 +1,182 @@
-# models.py
+# in_house_menu.py
 
-import sqlalchemy as sa
-from sqlalchemy.orm import sessionmaker, DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import event, text, func, ForeignKey
-from typing import Optional, List
-from datetime import datetime
+import html as html_module
+import json
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
+from aiogram import Bot, html as aiogram_html
+# NEW: Import keyboard builder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 
-DATABASE_URL = "sqlite+aiosqlite:///./shop.db"
-engine = create_async_engine(DATABASE_URL)
+from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory
+from dependencies import get_db_session
+# Змінено: імпортуємо новий шаблон з templates.py
+from templates import IN_HOUSE_MENU_HTML_TEMPLATE
 
-def enable_foreign_keys_sync(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
-sync_engine = engine.sync_engine
-event.listens_for(sync_engine, "connect")(enable_foreign_keys_sync)
-
-async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-class Base(DeclarativeBase):
-    pass
-
-# Модель для хранения пунктов меню (страниц)
-class MenuItem(Base):
-    __tablename__ = 'menu_items'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True, comment="Заголовок, который виден на кнопке")
-    content: Mapped[str] = mapped_column(sa.Text, nullable=False, comment="Содержимое страницы (можно использовать HTML)")
-    sort_order: Mapped[int] = mapped_column(sa.Integer, default=100)
-    show_on_website: Mapped[bool] = mapped_column(sa.Boolean, default=True)
-    show_in_telegram: Mapped[bool] = mapped_column(sa.Boolean, default=True)
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-class Role(Base):
-    __tablename__ = 'roles'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(sa.String(50), nullable=False, unique=True)
-    can_manage_orders: Mapped[bool] = mapped_column(sa.Boolean, default=False)
-    can_be_assigned: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может быть назначен на заказ (курьер)")
-    # НОВОЕ ПОЛЕ
-    can_serve_tables: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может обслуживать столики (официант)")
-    employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="role")
+async def get_admin_bot(session: AsyncSession) -> Bot | None:
+    settings = await session.get(Settings, 1)
+    if settings and settings.admin_bot_token:
+        from aiogram.enums import ParseMode
+        from aiogram.client.default import DefaultBotProperties
+        return Bot(token=settings.admin_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    return None
 
-class Employee(Base):
-    __tablename__ = 'employees'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    telegram_user_id: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True, unique=True, index=True, comment="Telegram ID для авторизации")
-    full_name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
-    phone_number: Mapped[Optional[str]] = mapped_column(sa.String(20), nullable=True, unique=True)
-    role_id: Mapped[int] = mapped_column(sa.ForeignKey('roles.id'), nullable=False)
-    role: Mapped["Role"] = relationship("Role", back_populates="employees", lazy='selectin')
-    is_on_shift: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    current_order_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('orders.id', ondelete="SET NULL"), nullable=True)
-    current_order: Mapped[Optional["Order"]] = relationship("Order", foreign_keys="Employee.current_order_id")
-    # Связь с назначенными столиками
-    assigned_tables: Mapped[List["Table"]] = relationship("Table", back_populates="assigned_waiter")
+@router.get("/menu/table/{table_id}", response_class=HTMLResponse)
+async def get_in_house_menu(table_id: int, request: Request, session: AsyncSession = Depends(get_db_session)):
+    table = await session.get(Table, table_id)
+    if not table:
+        raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
-
-class Category(Base):
-    __tablename__ = 'categories'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(sa.String(100))
-    sort_order: Mapped[int] = mapped_column(sa.Integer, default=100, server_default=text("100"))
-    show_on_delivery_site: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
-    show_in_restaurant: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
-    products: Mapped[list["Product"]] = relationship("Product", back_populates="category")
-
-class Product(Base):
-    __tablename__ = 'products'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(sa.String(100))
-    description: Mapped[str] = mapped_column(sa.String(500), nullable=True)
-    image_url: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    price: Mapped[int] = mapped_column()
-    is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"))
-    category_id: Mapped[int] = mapped_column(sa.ForeignKey('categories.id'))
-    category: Mapped["Category"] = relationship("Category", back_populates="products")
-    cart_items: Mapped[list["CartItem"]] = relationship("CartItem", back_populates="product")
-    r_keeper_id: Mapped[Optional[str]] = mapped_column(sa.String(100), nullable=True, comment="Identifier from R-Keeper")
-
-class OrderStatus(Base):
-    __tablename__ = 'order_statuses'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(sa.String(50), nullable=False)
-    notify_customer: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
-    visible_to_operator: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
-    visible_to_courier: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    # НОВОЕ ПОЛЕ
-    visible_to_waiter: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    is_completed_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    is_cancelled_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-
-    orders: Mapped[list["Order"]] = relationship("Order", back_populates="status")
-    history_entries: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="status")
-
-class Order(Base):
-    __tablename__ = 'orders'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
-    username: Mapped[Optional[str]] = mapped_column(sa.String(100), nullable=True)
-    products: Mapped[str] = mapped_column()
-    total_price: Mapped[int] = mapped_column()
-    customer_name: Mapped[str] = mapped_column(sa.String(100), nullable=True)
-    phone_number: Mapped[str] = mapped_column(sa.String(20), nullable=True, index=True)
-    address: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-    status_id: Mapped[int] = mapped_column(sa.ForeignKey('order_statuses.id'), default=1, nullable=False)
-    status: Mapped["OrderStatus"] = relationship("OrderStatus", back_populates="orders", lazy='selectin')
-    is_delivery: Mapped[bool] = mapped_column(default=True)
-    delivery_time: Mapped[str] = mapped_column(sa.String(50), nullable=True, default="Как можно скорее")
-    courier_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id', ondelete="SET NULL"), nullable=True)
-    courier: Mapped[Optional["Employee"]] = relationship("Employee", foreign_keys="Order.courier_id")
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now(), server_default=func.now())
-    completed_by_courier_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id'), nullable=True)
-
-    completed_by_courier: Mapped[Optional["Employee"]] = relationship("Employee", foreign_keys="Order.completed_by_courier_id")
-    history: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan", lazy='selectin')
+    settings = await session.get(Settings, 1)
+    logo_html = f'<img src="/{settings.logo_url}" alt="Логотип" class="header-logo">' if settings and settings.logo_url else ''
     
-    table_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('tables.id'), nullable=True)
-    table: Mapped[Optional["Table"]] = relationship("Table", back_populates="orders")
-    order_type: Mapped[str] = mapped_column(sa.String(20), default='delivery', server_default='delivery', nullable=False) # "delivery", "pickup", "in_house"
+    # Отримуємо меню, яке показується в ресторані
+    categories_res = await session.execute(
+        select(Category)
+        .where(Category.show_in_restaurant == True)
+        .order_by(Category.sort_order, Category.name)
+    )
+    products_res = await session.execute(
+        select(Product)
+        .join(Category)
+        .where(Product.is_active == True, Category.show_in_restaurant == True)
+    )
 
+    categories = [{"id": c.id, "name": c.name} for c in categories_res.scalars().all()]
+    products = [{"id": p.id, "name": p.name, "description": p.description, "price": p.price, "image_url": p.image_url, "category_id": p.category_id} for p in products_res.scalars().all()]
 
-# НОВАЯ ТАБЛИЦА ДЛЯ ИСТОРИИ СТАТУСОВ
-class OrderStatusHistory(Base):
-    __tablename__ = 'order_status_history'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey('orders.id', ondelete="CASCADE"), nullable=False, index=True)
-    status_id: Mapped[int] = mapped_column(ForeignKey('order_statuses.id'), nullable=False)
-    actor_info: Mapped[str] = mapped_column(sa.String(255), nullable=False, comment="Информация о том, кто изменил статус")
-    timestamp: Mapped[datetime] = mapped_column(sa.DateTime, default=func.now(), server_default=func.now(), nullable=False)
+    # Передаємо дані меню в шаблон через JSON
+    menu_data = json.dumps({"categories": categories, "products": products})
 
-    order: Mapped["Order"] = relationship("Order", back_populates="history")
-    status: Mapped["OrderStatus"] = relationship("OrderStatus", back_populates="history_entries", lazy='selectin')
+    return HTMLResponse(content=IN_HOUSE_MENU_HTML_TEMPLATE.format(
+        table_name=html_module.escape(table.name),
+        table_id=table.id,
+        logo_html=logo_html,
+        menu_data=menu_data
+    ))
 
+@router.post("/api/menu/table/{table_id}/call_waiter", response_class=JSONResponse)
+async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_session)):
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
+    if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
-class Customer(Base):
-    __tablename__ = 'customers'
-    user_id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True)
-    name: Mapped[str] = mapped_column(sa.String(100), nullable=True)
-    phone_number: Mapped[str] = mapped_column(sa.String(20), nullable=True)
-    address: Mapped[str] = mapped_column(sa.String(255), nullable=True)
-
-class CartItem(Base):
-    __tablename__ = 'cart_items'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(sa.BigInteger, index=True)
-    product_id: Mapped[int] = mapped_column(sa.ForeignKey('products.id'))
-    quantity: Mapped[int] = mapped_column(default=1)
-    product: Mapped["Product"] = relationship("Product", back_populates="cart_items", lazy='selectin')
-
-# НОВАЯ ТАБЛИЦА
-class Table(Base):
-    __tablename__ = 'tables'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True)
-    qr_code_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    assigned_waiter_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id', ondelete="SET NULL"), nullable=True)
+    waiter = table.assigned_waiter
+    message_text = f"❗️ <b>Виклик зі столика: {html_module.escape(table.name)}</b>"
     
-    assigned_waiter: Mapped[Optional["Employee"]] = relationship("Employee", back_populates="assigned_tables")
-    orders: Mapped[List["Order"]] = relationship("Order", back_populates="table")
+    admin_bot = await get_admin_bot(session)
+    if not admin_bot:
+        raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
+    try:
+        target_chat_id = None
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
+        
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, message_text)
+            return JSONResponse(content={"message": "Офіціанта сповіщено. Будь ласка, зачекайте."})
+        else:
+            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+    finally:
+        await admin_bot.session.close()
 
-class Settings(Base):
-    __tablename__ = 'settings'
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    client_bot_token: Mapped[str] = mapped_column(sa.String(100), nullable=True)
-    admin_bot_token: Mapped[str] = mapped_column(sa.String(100), nullable=True)
-    admin_chat_id: Mapped[str] = mapped_column(sa.String(100), nullable=True)
-    logo_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    r_keeper_enabled: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"))
-    r_keeper_api_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    r_keeper_user: Mapped[Optional[str]] = mapped_column(sa.String(100), nullable=True)
-    r_keeper_password: Mapped[Optional[str]] = mapped_column(sa.String(100), nullable=True)
-    r_keeper_station_code: Mapped[Optional[str]] = mapped_column(sa.String(50), nullable=True)
-    r_keeper_payment_type: Mapped[Optional[str]] = mapped_column(sa.String(50), nullable=True)
+@router.post("/api/menu/table/{table_id}/request_bill", response_class=JSONResponse)
+async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_session)):
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
+    if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
-async def create_db_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with async_session_maker() as session:
-        result_status = await session.execute(sa.select(OrderStatus).limit(1))
-        if not result_status.scalars().first():
-            default_statuses = {
-                "Новый": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
-                "В обработке": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
-                "Готов": {"visible_to_operator": True, "visible_to_courier": True, "visible_to_waiter": True},
-                "Доставлен": {"visible_to_operator": True, "visible_to_courier": True, "is_completed_status": True},
-                "Отменен": {"visible_to_operator": True, "visible_to_courier": False, "is_cancelled_status": True, "visible_to_waiter": True},
-                # НОВИЙ СТАТУС
-                "Оплачено": {"visible_to_operator": True, "is_completed_status": True, "visible_to_waiter": True, "notify_customer": False}
-            }
-            for name, props in default_statuses.items():
-                session.add(OrderStatus(name=name, **props))
+    waiter = table.assigned_waiter
+    message_text = f"💰 <b>Запит на розрахунок зі столика: {html_module.escape(table.name)}</b>"
+    
+    admin_bot = await get_admin_bot(session)
+    if not admin_bot:
+        raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
-        result_roles = await session.execute(sa.select(Role).limit(1))
-        if not result_roles.scalars().first():
-            session.add(Role(name="Администратор", can_manage_orders=True, can_be_assigned=True, can_serve_tables=True))
-            session.add(Role(name="Оператор", can_manage_orders=True, can_be_assigned=False, can_serve_tables=True))
-            session.add(Role(name="Курьер", can_manage_orders=False, can_be_assigned=True, can_serve_tables=False))
-            session.add(Role(name="Официант", can_manage_orders=False, can_be_assigned=False, can_serve_tables=True))
+    try:
+        target_chat_id = None
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
+        
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, message_text)
+            return JSONResponse(content={"message": "Запит надіслано. Офіціант незабаром підійде з рахунком."})
+        else:
+            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+    finally:
+        await admin_bot.session.close()
 
-        await session.commit()
+@router.post("/api/menu/table/{table_id}/place_order", response_class=JSONResponse)
+async def place_in_house_order(table_id: int, items: list = Body(...), session: AsyncSession = Depends(get_db_session)):
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
+    if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
+    if not items: raise HTTPException(status_code=400, detail="Замовлення порожнє.")
+
+    total_price = sum(item.get('price', 0) * item.get('quantity', 0) for item in items)
+    products_str = ", ".join([f"{item['name']} x {item['quantity']}" for item in items])
+    
+    order = Order(
+        customer_name=f"Стіл: {table.name}", phone_number=f"table_{table.id}",
+        address=None, products=products_str, total_price=total_price,
+        is_delivery=False, delivery_time="In House", order_type="in_house",
+        table_id=table.id, status_id=1
+    )
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+    
+    history_entry = OrderStatusHistory(
+        order_id=order.id, status_id=order.status_id,
+        actor_info=f"Гість за столиком {table.name}"
+    )
+    session.add(history_entry)
+    await session.commit()
+
+    order_details_text = (f"📝 <b>Нове замовлення зі столика: {aiogram_html.bold(table.name)} (ID: #{order.id})</b>\n\n"
+                          f"<b>Склад:</b>\n- " + aiogram_html.quote(products_str.replace(", ", "\n- ")) +
+                          f"\n\n<b>Сума:</b> {total_price} грн")
+
+    admin_bot = await get_admin_bot(session)
+    if not admin_bot:
+        raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
+
+    # NEW: Add management buttons for waiter
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="⚙️ Керувати замовленням", callback_data=f"waiter_manage_order_{order.id}"))
+
+    try:
+        waiter = table.assigned_waiter
+        target_chat_id = None
+        
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                order_details_text = f"❗️ <b>Замовлення з вільного столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n" + order_details_text
+
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, order_details_text, reply_markup=kb.as_markup())
+            return JSONResponse(content={"message": "Замовлення прийнято! Офіціант незабаром його підтвердить.", "order_id": order.id})
+        else:
+            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+    finally:
+        await admin_bot.session.close()
