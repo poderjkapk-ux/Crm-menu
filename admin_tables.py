@@ -11,9 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from models import Table, Employee, Role
-# ИСПРАВЛЕНИЕ: Не нужно импортировать 'table_waiter_association' здесь, SQLAlchemy обрабатывает это через relationship
+from templates import ADMIN_HTML_TEMPLATE, ADMIN_TABLES_BODY
 from dependencies import get_db_session, check_credentials
-from typing import List
 
 router = APIRouter()
 
@@ -25,11 +24,11 @@ async def admin_tables_list(
 ):
     """Відображає сторінку управління столиками."""
     tables_res = await session.execute(
-        select(Table).options(joinedload(Table.assigned_waiters)).order_by(Table.name)
+        select(Table).options(joinedload(Table.assigned_waiter)).order_by(Table.name)
     )
-    # ИСПРАВЛЕНО: Добавлен .unique() для обработки дубликатов из-за joinedload коллекции
-    tables = tables_res.unique().scalars().all()
+    tables = tables_res.scalars().all()
     
+    # ВИПРАВЛЕНО: Отримуємо ID всіх ролей, які можуть обслуговувати столики
     waiter_roles_res = await session.execute(select(Role.id).where(Role.can_serve_tables == True))
     waiter_role_ids = waiter_roles_res.scalars().all()
     
@@ -47,16 +46,15 @@ async def admin_tables_list(
 
     rows = []
     for table in tables:
-        assigned_waiter_ids = [w.id for w in table.assigned_waiters]
-        waiter_names = ", ".join(sorted([w.full_name for w in table.assigned_waiters])) or "<i>Не призначено</i>"
+        waiter_name = table.assigned_waiter.full_name if table.assigned_waiter else "<i>Не призначено</i>"
         rows.append(f"""
         <tr>
             <td>{table.id}</td>
             <td>{html.escape(table.name)}</td>
             <td><a href="/qr/{table.id}" target="_blank"><img src="/qr/{table.id}" alt="QR Code" class="qr-code-img"></a></td>
-            <td>{waiter_names}</td>
+            <td>{waiter_name}</td>
             <td class="actions">
-                <button class="button-sm" onclick='openAssignWaiterModal({table.id}, "{html.escape(table.name)}", {waiters_json}, {json.dumps(assigned_waiter_ids)})'>👤 Призначити</button>
+                <button class="button-sm" onclick='openAssignWaiterModal({table.id}, "{html.escape(table.name)}", {waiters_json})'>👤 Призначити</button>
                 <a href="/admin/tables/delete/{table.id}" onclick="return confirm('Ви впевнені? Видалення столика призведе до видалення QR коду.');" class="button-sm danger">🗑️</a>
             </td>
         </tr>
@@ -75,6 +73,7 @@ async def add_table(
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
+    """Додає новий столик."""
     new_table = Table(name=name)
     session.add(new_table)
     await session.commit()
@@ -86,6 +85,7 @@ async def delete_table(
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
+    """Видаляє столик."""
     table = await session.get(Table, table_id)
     if table:
         await session.delete(table)
@@ -95,30 +95,24 @@ async def delete_table(
 @router.post("/admin/tables/assign_waiter/{table_id}")
 async def assign_waiter_to_table(
     table_id: int,
-    request: Request,
+    waiter_id: int = Form(...),
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
     """Призначає або знімає офіціанта зі столика."""
-    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters), joinedload(Table.assigned_waiters, Employee.role)])
+    table = await session.get(Table, table_id)
     if not table:
         raise HTTPException(status_code=404, detail="Столик не знайдено")
 
-    form_data = await request.form()
-    waiter_ids_str = form_data.getlist("waiter_ids")
-    waiter_ids = [int(val) for val in waiter_ids_str]
-    
-    table.assigned_waiters.clear()
-    
-    if waiter_ids:
-        waiters_res = await session.execute(
-            select(Employee).where(Employee.id.in_(waiter_ids)).options(joinedload(Employee.role))
-        )
-        waiters = waiters_res.scalars().all()
-        for waiter in waiters:
-            if waiter.role and waiter.role.can_serve_tables:
-                 table.assigned_waiters.append(waiter)
-            
+    if waiter_id == 0:
+        table.assigned_waiter_id = None
+    else:
+        # ВИПРАВЛЕНО: Додано joinedload для оптимізації запиту
+        waiter = await session.get(Employee, waiter_id, options=[joinedload(Employee.role)])
+        if not waiter or not waiter.role.can_serve_tables:
+            raise HTTPException(status_code=400, detail="Співробітник не є офіціантом або не знайдений")
+        table.assigned_waiter_id = waiter_id
+        
     await session.commit()
     return RedirectResponse(url="/admin/tables", status_code=303)
 

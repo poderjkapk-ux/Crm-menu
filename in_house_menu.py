@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from aiogram import Bot, html as aiogram_html
+# NEW: Import keyboard builder
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 
 from models import Table, Product, Category, Order, Settings, Employee, OrderStatusHistory
 from dependencies import get_db_session
+# Змінено: імпортуємо новий шаблон з templates.py
 from templates import IN_HOUSE_MENU_HTML_TEMPLATE
 
 router = APIRouter()
@@ -27,7 +29,6 @@ async def get_admin_bot(session: AsyncSession) -> Bot | None:
         return Bot(token=settings.admin_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     return None
 
-# ... (код до функции call_waiter без изменений) ...
 @router.get("/menu/table/{table_id}", response_class=HTMLResponse)
 async def get_in_house_menu(table_id: int, request: Request, session: AsyncSession = Depends(get_db_session)):
     table = await session.get(Table, table_id)
@@ -36,7 +37,7 @@ async def get_in_house_menu(table_id: int, request: Request, session: AsyncSessi
 
     settings = await session.get(Settings, 1)
     logo_html = f'<img src="/{settings.logo_url}" alt="Логотип" class="header-logo">' if settings and settings.logo_url else ''
-
+    
     # Отримуємо меню, яке показується в ресторані
     categories_res = await session.execute(
         select(Category)
@@ -62,42 +63,12 @@ async def get_in_house_menu(table_id: int, request: Request, session: AsyncSessi
         menu_data=menu_data
     ))
 
-async def notify_waiters_or_admin(
-    session: AsyncSession, 
-    bot: Bot, 
-    table: Table, 
-    message_text: str, 
-    keyboard=None
-) -> bool:
-    """Отправляет уведомление всем прикрепленным официантам или в админ-чат."""
-    waiters_on_shift = [w for w in table.assigned_waiters if w.telegram_user_id and w.is_on_shift]
-    
-    target_chat_ids = []
-    
-    if waiters_on_shift:
-        target_chat_ids.extend([w.telegram_user_id for w in waiters_on_shift])
-    else:
-        settings = await session.get(Settings, 1)
-        if settings and settings.admin_chat_id:
-            target_chat_ids.append(settings.admin_chat_id)
-            message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
-    
-    if not target_chat_ids:
-        return False
-
-    for chat_id in target_chat_ids:
-        try:
-            await bot.send_message(chat_id, message_text, reply_markup=keyboard)
-        except Exception as e:
-            logger.error(f"Не вдалося надіслати сповіщення в чат {chat_id}: {e}")
-            
-    return True
-
 @router.post("/api/menu/table/{table_id}/call_waiter", response_class=JSONResponse)
 async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_session)):
-    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters).joinedload(Employee.role)])
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
+    waiter = table.assigned_waiter
     message_text = f"❗️ <b>Виклик зі столика: {html_module.escape(table.name)}</b>"
     
     admin_bot = await get_admin_bot(session)
@@ -105,8 +76,17 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
     try:
-        sent = await notify_waiters_or_admin(session, admin_bot, table, message_text)
-        if sent:
+        target_chat_id = None
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
+        
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, message_text)
             return JSONResponse(content={"message": "Офіціанта сповіщено. Будь ласка, зачекайте."})
         else:
             raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
@@ -115,9 +95,10 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
 
 @router.post("/api/menu/table/{table_id}/request_bill", response_class=JSONResponse)
 async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_session)):
-    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters).joinedload(Employee.role)])
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
+    waiter = table.assigned_waiter
     message_text = f"💰 <b>Запит на розрахунок зі столика: {html_module.escape(table.name)}</b>"
     
     admin_bot = await get_admin_bot(session)
@@ -125,8 +106,17 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
     try:
-        sent = await notify_waiters_or_admin(session, admin_bot, table, message_text)
-        if sent:
+        target_chat_id = None
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                message_text += "\n<i>Офіціанта не призначено або він не на зміні.</i>"
+        
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, message_text)
             return JSONResponse(content={"message": "Запит надіслано. Офіціант незабаром підійде з рахунком."})
         else:
             raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
@@ -135,7 +125,7 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
 
 @router.post("/api/menu/table/{table_id}/place_order", response_class=JSONResponse)
 async def place_in_house_order(table_id: int, items: list = Body(...), session: AsyncSession = Depends(get_db_session)):
-    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiters).joinedload(Employee.role)])
+    table = await session.get(Table, table_id, options=[joinedload(Table.assigned_waiter)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
     if not items: raise HTTPException(status_code=400, detail="Замовлення порожнє.")
 
@@ -167,14 +157,26 @@ async def place_in_house_order(table_id: int, items: list = Body(...), session: 
     if not admin_bot:
         raise HTTPException(status_code=500, detail="Сервіс сповіщень недоступний.")
 
+    # NEW: Add management buttons for waiter
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="⚙️ Керувати замовленням", callback_data=f"waiter_manage_order_{order.id}"))
 
     try:
-        sent = await notify_waiters_or_admin(session, admin_bot, table, order_details_text, kb.as_markup())
-        if sent:
+        waiter = table.assigned_waiter
+        target_chat_id = None
+        
+        if waiter and waiter.telegram_user_id and waiter.is_on_shift:
+            target_chat_id = waiter.telegram_user_id
+        else:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                target_chat_id = settings.admin_chat_id
+                order_details_text = f"❗️ <b>Замовлення з вільного столика {aiogram_html.bold(table.name)} (ID: #{order.id})!</b>\n" + order_details_text
+
+        if target_chat_id:
+            await admin_bot.send_message(target_chat_id, order_details_text, reply_markup=kb.as_markup())
             return JSONResponse(content={"message": "Замовлення прийнято! Офіціант незабаром його підтвердить.", "order_id": order.id})
         else:
-             raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
+            raise HTTPException(status_code=503, detail="Не вдалося знайти отримувача для сповіщення.")
     finally:
         await admin_bot.session.close()

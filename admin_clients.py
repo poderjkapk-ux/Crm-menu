@@ -8,13 +8,11 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import joinedload
 
 from models import Order, OrderStatusHistory, Employee
-# ИСПРАВЛЕНО: Добавлен импорт шаблонов
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_CLIENTS_LIST_BODY, ADMIN_CLIENT_DETAIL_BODY
 from dependencies import get_db_session, check_credentials
 
 router = APIRouter()
 
-# ... (остальной код файла без изменений) ...
 @router.get("/admin/clients", response_class=HTMLResponse)
 async def admin_clients_list(
     page: int = Query(1, ge=1),
@@ -87,7 +85,8 @@ async def admin_clients_list(
         rows=rows or "<tr><td colspan='5'>Клієнтів не знайдено</td></tr>",
         pagination=pagination if pages > 1 else ""
     )
-
+    
+    # ВИПРАВЛЕНО: Додано відсутній ключ 'tables_active'
     active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
     active_classes["clients_active"] = "active"
 
@@ -111,7 +110,7 @@ async def admin_client_detail(
         )
         .order_by(Order.id.desc())
     )
-
+    
     orders = orders_res.unique().scalars().all()
 
     if not orders:
@@ -129,13 +128,13 @@ async def admin_client_detail(
     order_rows = []
     for o in orders:
         completed_by = o.completed_by_courier.full_name if o.completed_by_courier else "<i>Не завершено кур'єром</i>"
-
+        
         history_log = "<ul class='status-history'>"
         for h in sorted(o.history, key=lambda x: x.timestamp):
             timestamp = h.timestamp.strftime('%d.%m.%Y %H:%M')
             history_log += f"<li><b>{h.status.name}</b> ({html.escape(h.actor_info)}) - {timestamp}</li>"
         history_log += "</ul>"
-
+        
         order_rows.append(f"""
         <tr class="order-summary-row" onclick="toggleDetails(this)">
             <td>#{o.id}</td>
@@ -167,6 +166,7 @@ async def admin_client_detail(
         order_rows="".join(order_rows)
     )
 
+    # ВИПРАВЛЕНО: Додано відсутній ключ 'tables_active'
     active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
     active_classes["clients_active"] = "active"
 
