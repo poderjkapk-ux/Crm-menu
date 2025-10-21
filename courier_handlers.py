@@ -10,19 +10,17 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, delete
 from sqlalchemy.orm import joinedload
 from typing import Dict, Any
 from urllib.parse import quote_plus
 
-from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table
+from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table, table_waiter_association
 from notification_manager import notify_all_parties_on_status_change
 
 logger = logging.getLogger(__name__)
 
-class StaffAuthStates(StatesGroup):
-    waiting_for_phone = State()
-
+# ... (остальной код до функции show_waiter_tables без изменений) ...
 def get_staff_login_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text="🔐 Вхід оператора"))
@@ -65,7 +63,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
     message = message_or_callback.message if isinstance(message_or_callback, CallbackQuery) else message_or_callback
 
     employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role)))
-    
+
     if not employee or not employee.role.can_be_assigned:
          return await message.answer("❌ У вас немає прав кур'єра.")
 
@@ -87,7 +85,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
          text += "🔴 Ви не на зміні. Натисніть '🟢 Почати зміну', щоб отримувати нові замовлення.\n\n"
     if not orders:
         text += "На даний момент немає активних замовлень, призначених вам."
-    
+
     kb = InlineKeyboardBuilder()
     if orders:
         for order in orders:
@@ -98,7 +96,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
                      f"💰 Сума: {order.total_price} грн\n\n")
             kb.row(InlineKeyboardButton(text=f"Дії по замовленню #{order.id}", callback_data=f"courier_view_order_{order.id}"))
         kb.adjust(1)
-    
+
     try:
         if isinstance(message_or_callback, CallbackQuery):
             await message.edit_text(text, reply_markup=kb.as_markup())
@@ -111,13 +109,15 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
          else:
              logger.error(f"Error in show_courier_orders: {e}")
              await message.answer(text, reply_markup=kb.as_markup())
-
 async def show_waiter_tables(message_or_callback: Message | CallbackQuery, session: AsyncSession):
     is_callback = isinstance(message_or_callback, CallbackQuery)
     message = message_or_callback.message if is_callback else message_or_callback
     
+    # ИЗМЕНЕНО: Загружаем связанные столики через новую M2M связь
     employee = await session.scalar(
-        select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
+        select(Employee)
+        .where(Employee.telegram_user_id == message.from_user.id)
+        .options(joinedload(Employee.assigned_tables), joinedload(Employee.role))
     )
     if not employee or not employee.role.can_serve_tables:
         return await message.answer("❌ У вас немає прав офіціанта.")
@@ -125,10 +125,8 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
     if not employee.is_on_shift:
         return await message.answer("🔴 Ви не на зміні. Почніть зміну, щоб побачити свої столики.")
 
-    tables_res = await session.execute(
-        select(Table).where(Table.assigned_waiter_id == employee.id).order_by(Table.name)
-    )
-    tables = tables_res.scalars().all()
+    # ИЗМЕНЕНО: Просто получаем столики из загруженной связи
+    tables = sorted(employee.assigned_tables, key=lambda t: t.name)
 
     text = "🍽 <b>Закріплені за вами столики:</b>\n\n"
     kb = InlineKeyboardBuilder()
@@ -142,11 +140,14 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
     if is_callback:
         try:
             await message.edit_text(text, reply_markup=kb.as_markup())
-        except TelegramBadRequest: # If message is photo or something else
+        except TelegramBadRequest:
             await message.delete()
             await message.answer(text, reply_markup=kb.as_markup())
     else:
         await message.answer(text, reply_markup=kb.as_markup())
+        
+class StaffAuthStates(StatesGroup):
+    waiting_for_phone = State()
 
 
 async def start_handler(message: Message, state: FSMContext, session: AsyncSession, **kwargs: Dict[str, Any]):
@@ -181,14 +182,14 @@ def register_courier_handlers(dp_admin: Dispatcher):
             select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role))
         )
         if employee:
-            return await message.answer(f"✅ Ви вже авторизовані як {employee.role.name}. Спочатку вийдіть із системи.", 
+            return await message.answer(f"✅ Ви вже авторизовані як {employee.role.name}. Спочатку вийдіть із системи.",
                                         reply_markup=get_staff_login_keyboard())
-        
+
         role_type = "unknown"
         if "кур'єра" in message.text: role_type = "courier"
         elif "оператора" in message.text: role_type = "operator"
         elif "офіціанта" in message.text: role_type = "waiter"
-            
+
         await state.set_state(StaffAuthStates.waiting_for_phone)
         await state.update_data(role_type=role_type)
         kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_auth")).as_markup()
@@ -199,27 +200,27 @@ def register_courier_handlers(dp_admin: Dispatcher):
         phone = message.text.strip()
         data = await state.get_data()
         role_type = data.get("role_type")
-        
+
         employee = await session.scalar(select(Employee).options(joinedload(Employee.role)).where(Employee.phone_number == phone))
-        
+
         role_checks = {
             "courier": lambda e: e and e.role.can_be_assigned,
             "operator": lambda e: e and e.role.can_manage_orders,
             "waiter": lambda e: e and e.role.can_serve_tables,
         }
-        
+
         if role_checks.get(role_type, lambda e: False)(employee):
             employee.telegram_user_id = message.from_user.id
             await session.commit()
             await state.clear()
-            
+
             keyboard_getters = {
                 "courier": get_courier_keyboard,
                 "operator": get_operator_keyboard,
                 "waiter": get_waiter_keyboard,
             }
             keyboard = keyboard_getters[role_type](employee.is_on_shift)
-            
+
             await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=keyboard)
         else:
             await message.answer(f"❌ Співробітника з таким номером не знайдено або він не має прав для ролі '{role_type}'. Спробуйте ще раз.")
@@ -232,7 +233,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         except Exception:
              await callback.message.delete()
              await callback.message.answer("Авторизацію скасовано.", reply_markup=get_staff_login_keyboard())
-    
+
     @dp_admin.message(F.text.in_({"🟢 Почати зміну", "🔴 Завершити зміну"}))
     async def toggle_shift(message: Message, session: AsyncSession):
         employee = await session.scalar(
@@ -246,37 +247,38 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         employee.is_on_shift = is_start
         await session.commit()
-        
+
         action = "почали" if is_start else "завершили"
-        keyboard = get_staff_login_keyboard() 
+        keyboard = get_staff_login_keyboard()
         if employee.role.can_be_assigned:
             keyboard = get_courier_keyboard(employee.is_on_shift)
         elif employee.role.can_manage_orders:
             keyboard = get_operator_keyboard(employee.is_on_shift)
         elif employee.role.can_serve_tables:
             keyboard = get_waiter_keyboard(employee.is_on_shift)
-        
+
         await message.answer(f"✅ Ви успішно {action} зміну.", reply_markup=keyboard)
 
 
     @dp_admin.message(F.text == "🚪 Вийти")
     async def logout_handler(message: Message, session: AsyncSession):
-        employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
+        employee = await session.scalar(
+            select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role), joinedload(Employee.assigned_tables))
+        )
         if employee:
             employee.telegram_user_id = None
             employee.is_on_shift = False
             if employee.role.can_be_assigned:
                  employee.current_order_id = None
+            # ИЗМЕНЕНО: Открепляем официанта от всех столиков при выходе
             if employee.role.can_serve_tables:
-                tables_to_unassign = await session.scalars(select(Table).where(Table.assigned_waiter_id == employee.id))
-                for table in tables_to_unassign.all():
-                    table.assigned_waiter_id = None
+                employee.assigned_tables.clear()
 
             await session.commit()
             await message.answer("👋 Ви вийшли з системи.", reply_markup=get_staff_login_keyboard())
         else:
             await message.answer("❌ Ви не авторизовані.")
-
+# ... (остальной код без изменений) ...
     @dp_admin.message(F.text.in_({"📦 Мої замовлення", "🍽 Мої столики"}))
     async def handle_show_items_by_role(message: Message, session: AsyncSession, **kwargs: Dict[str, Any]):
         employee = await session.scalar(
@@ -307,13 +309,13 @@ def register_courier_handlers(dp_admin: Dispatcher):
                 f"Телефон: {html_module.escape(order.phone_number)}\n"
                 f"Склад: {html_module.escape(order.products)}\n"
                 f"Сума: {order.total_price} грн\n\n")
-        
+
         kb = InlineKeyboardBuilder()
         statuses_res = await session.execute(
             select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id)
         )
         courier_statuses = statuses_res.scalars().all()
-        
+
         status_buttons = [
             InlineKeyboardButton(text=status.name, callback_data=f"staff_set_status_{order.id}_{status.id}")
             for status in courier_statuses
@@ -338,12 +340,12 @@ def register_courier_handlers(dp_admin: Dispatcher):
         client_bot = dp_admin.get("client_bot")
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id).options(joinedload(Employee.role)))
         actor_info = f"{employee.role.name}: {employee.full_name}" if employee else f"Співробітник (ID: {callback.from_user.id})"
-        
+
         order_id, new_status_id = map(int, callback.data.split("_")[3:])
-        
+
         order = await session.get(Order, order_id, options=[joinedload(Order.table)])
         if not order: return await callback.answer("Замовлення не знайдено.")
-        
+
         new_status = await session.get(OrderStatus, new_status_id)
         if not new_status: return await callback.answer(f"Помилка: Статус не знайдено.")
 
@@ -359,20 +361,18 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         session.add(OrderStatusHistory(order_id=order.id, status_id=new_status.id, actor_info=actor_info))
         await session.commit()
-        
+
         await notify_all_parties_on_status_change(
             order=order, old_status_name=old_status_name, actor_info=actor_info,
             admin_bot=callback.bot, client_bot=client_bot, session=session
         )
         await callback.answer(alert_text)
-        
+
         if order.order_type == "in_house":
             # After changing status, return to the manage view
             await manage_in_house_order_handler(callback, session, order_id=order_id)
         else:
             await show_courier_orders(callback, session)
-            
-    # --- НОВІ ОБРОБНИКИ ДЛЯ ОФІЦІАНТА ---
     @dp_admin.callback_query(F.data.startswith("waiter_view_table_"))
     async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession):
         table_id = int(callback.data.split("_")[-1])
@@ -382,7 +382,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         final_statuses_res = await session.execute(select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True)))
         final_statuses = final_statuses_res.scalars().all()
-        
+
         active_orders_res = await session.execute(select(Order).where(Order.table_id == table_id, Order.status_id.not_in(final_statuses)).options(joinedload(Order.status)))
         active_orders = active_orders_res.scalars().all()
 
@@ -397,7 +397,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
                     callback_data=f"waiter_manage_order_{order.id}" # Go directly to management
                 ))
         kb.row(InlineKeyboardButton(text="⬅️ До списку столиків", callback_data="back_to_tables_list"))
-        
+
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
         await callback.answer()
 
@@ -410,7 +410,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
     async def waiter_view_order_details(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
         await manage_in_house_order_handler(callback, session, order_id=order_id)
-        
+
     # NEW: Handler and view generator for full order management by waiter
     async def _generate_waiter_order_view(order: Order, session: AsyncSession):
         """Генерує текст і клавіатуру для управління замовленням офіціантом."""
@@ -436,7 +436,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         kb.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}"))
         kb.row(InlineKeyboardButton(text="⬅️ Назад до столика", callback_data=f"waiter_view_table_{order.table_id}"))
-        
+
         return text, kb.as_markup()
 
     @dp_admin.callback_query(F.data.startswith("waiter_manage_order_"))
@@ -449,7 +449,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
             return await callback.answer("Замовлення не знайдено", show_alert=True)
 
         text, keyboard = await _generate_waiter_order_view(order, session)
-        
+
         try:
             await callback.message.edit_text(text, reply_markup=keyboard)
         except TelegramBadRequest as e:
