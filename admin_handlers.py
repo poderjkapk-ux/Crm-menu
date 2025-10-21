@@ -451,16 +451,12 @@ def register_admin_handlers(dp: Dispatcher):
                         map_query = f"https://maps.google.com/?q={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_query))
                     
-                    # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
-                    if order.phone_number:
-                        clean_phone = re.sub(r'[^0-9\+]', '', order.phone_number)
-                        if clean_phone and clean_phone[0] != '+':
-                            clean_phone = '+' + clean_phone
-                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
+                    # ВИДАЛЕНО: Кнопка "Зателефонувати клієнту" за запитом користувача.
                         
                     await callback.bot.send_message(
                         new_courier.telegram_user_id,
-                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html_module.escape(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
+                        # ОНОВЛЕНО: Додано номер телефону в текст повідомлення
+                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html_module.escape(order.address or 'Самовивіз')}\nТелефон: {html_module.escape(order.phone_number)}\nСума: {order.total_price} грн.",
                         reply_markup=kb_courier.as_markup()
                     )
                 except Exception as e:
