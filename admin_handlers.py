@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from urllib.parse import quote_plus
+import re # <--- ДОДАНО
 
 from models import Order, Product, Category, OrderStatus, Employee, Role, Settings, OrderStatusHistory
 from courier_handlers import get_operator_keyboard, get_staff_login_keyboard, get_courier_keyboard
@@ -350,7 +351,7 @@ def register_admin_handlers(dp: Dispatcher):
     @dp.callback_query(F.data.startswith("admin_add_item_start_"))
     async def admin_add_item_start(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
-        categories = (await session.execute(select(Category).where(Category.show_on_delivery_site == True).order_by(Category.sort_order, Category.name))).scalars().all()
+        categories = (await session.execute(select(Category).order_by(Category.sort_order, Category.name))).scalars().all()
         kb = InlineKeyboardBuilder()
         for cat in categories:
             kb.add(InlineKeyboardButton(text=cat.name, callback_data=f"admin_show_cat_{order_id}_{cat.id}_1"))
@@ -446,13 +447,14 @@ def register_admin_handlers(dp: Dispatcher):
                     
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
-                        # ВИПРАВЛЕНО: Посилання на карту
-                        map_query = f"https://maps.google.com/?q={encoded_address}" 
+                        # ВИПРАВЛЕНО: Правильне посилання на карту
+                        map_query = f"https://maps.google.com/?q={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_query))
                     
-                    # НОВЕ: Кнопка для дзвінка клієнту
+                    # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
                     if order.phone_number:
-                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
+                        clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
+                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
                         
                     await callback.bot.send_message(
                         new_courier.telegram_user_id,
