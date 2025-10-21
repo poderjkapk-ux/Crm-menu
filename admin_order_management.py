@@ -181,11 +181,16 @@ async def web_assign_courier(
                     statuses_res = await session.execute(select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id))
                     statuses = statuses_res.scalars().all()
                     kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
+                    
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
-                        # ВИПРАВЛЕНО: Неправильне посилання на карту
-                        map_url = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
+                        # ВИПРАВЛЕНО: Правильне посилання на карту
+                        map_url = f"https://maps.google.com/?q={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
+                        
+                    # НОВЕ: Кнопка для дзвінка клієнту
+                    if order.phone_number:
+                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
                     
                     await admin_bot.send_message(
                         new_courier.telegram_user_id,
