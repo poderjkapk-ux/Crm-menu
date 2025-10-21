@@ -1,6 +1,7 @@
 # admin_handlers.py
 
 import logging
+import html as html_module
 from aiogram import F, Dispatcher, Bot, html
 from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
@@ -59,14 +60,14 @@ async def _generate_order_admin_view(order: Order, session: AsyncSession):
     """Генерує текст та клавіатуру для відображення замовлення в адмін-боті."""
     await session.refresh(order, ['status', 'courier'])
     status_name = order.status.name if order.status else 'Невідомий'
-    delivery_info = f"Адреса: {html.quote(order.address or 'Не вказана')}" if order.is_delivery else 'Самовивіз'
-    time_info = f"Час: {html.quote(order.delivery_time)}"
+    delivery_info = f"Адреса: {html_module.escape(order.address or 'Не вказана')}" if order.is_delivery else 'Самовивіз'
+    time_info = f"Час: {html_module.escape(order.delivery_time)}"
     source = f"Джерело: {'Сайт' if order.user_id is None else 'Telegram-бот'}"
     courier_info = order.courier.full_name if order.courier else 'Не призначений'
-    products_formatted = "- " + html.quote(order.products or '').replace(", ", "\n- ")
+    products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
 
     admin_text = (f"<b>Замовлення #{order.id}</b> ({source})\n\n"
-                  f"<b>Клієнт:</b> {html.quote(order.customer_name)}\n<b>Телефон:</b> {html.quote(order.phone_number)}\n"
+                  f"<b>Клієнт:</b> {html_module.escape(order.customer_name)}\n<b>Телефон:</b> {html_module.escape(order.phone_number)}\n"
                   f"<b>{delivery_info}</b>\n<b>{time_info}</b>\n"
                   f"<b>Кур'єр:</b> {courier_info}\n\n"
                   f"<b>Страви:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
@@ -116,7 +117,7 @@ async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, orde
             if product := db_products.get(name):
                 kb.row(
                     InlineKeyboardButton(text="➖", callback_data=f"admin_change_qnt_{order.id}_{product.id}_-1"),
-                    InlineKeyboardButton(text=f"{html.quote(name)}: {quantity}", callback_data="noop"),
+                    InlineKeyboardButton(text=f"{html_module.escape(name)}: {quantity}", callback_data="noop"),
                     InlineKeyboardButton(text="➕", callback_data=f"admin_change_qnt_{order.id}_{product.id}_1"),
                     InlineKeyboardButton(text="❌", callback_data=f"admin_delete_item_{order.id}_{product.id}")
                 )
@@ -130,8 +131,8 @@ async def _display_edit_customer_menu(bot: Bot, chat_id: int, message_id: int, o
     if not order: return
 
     text = (f"<b>Редагування клієнта (Замовлення #{order.id})</b>\n\n"
-            f"<b>Поточне ім'я:</b> {html.quote(order.customer_name)}\n"
-            f"<b>Поточний телефон:</b> {html.quote(order.phone_number)}")
+            f"<b>Поточне ім'я:</b> {html_module.escape(order.customer_name)}\n"
+            f"<b>Поточний телефон:</b> {html_module.escape(order.phone_number)}")
 
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="Змінити ім'я", callback_data=f"change_name_start_{order_id}"),
@@ -153,8 +154,8 @@ async def _display_edit_delivery_menu(bot: Bot, chat_id: int, message_id: int, o
     delivery_type_str = "🚚 Доставка" if order.is_delivery else "🏠 Самовивіз"
     text = (f"<b>Редагування доставки (Замовлення #{order.id})</b>\n\n"
             f"<b>Тип:</b> {delivery_type_str}\n"
-            f"<b>Адреса:</b> {html.quote(order.address or 'Не вказана')}\n"
-            f"<b>Час:</b> {html.quote(order.delivery_time or 'Якнайшвидше')}")
+            f"<b>Адреса:</b> {html_module.escape(order.address or 'Не вказана')}\n"
+            f"<b>Час:</b> {html_module.escape(order.delivery_time or 'Якнайшвидше')}")
 
     kb = InlineKeyboardBuilder()
     toggle_text = "Зробити Самовивозом" if order.is_delivery else "Зробити Доставкою"
@@ -443,11 +444,11 @@ def register_admin_handlers(dp: Dispatcher):
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
                         # ВИПРАВЛЕНО: Неправильне посилання на карту
-                        map_query = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
+                        map_query = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_query))
                     await callback.bot.send_message(
                         new_courier.telegram_user_id,
-                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.quote(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
+                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html_module.escape(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
                         reply_markup=kb_courier.as_markup()
                     )
                 except Exception as e:
@@ -456,7 +457,7 @@ def register_admin_handlers(dp: Dispatcher):
         await session.commit()
         
         if settings and settings.admin_chat_id:
-            await callback.bot.send_message(settings.admin_chat_id, f"👤 Замовленню #{order.id} призначено кур'єра: <b>{html.quote(new_courier_name)}</b>")
+            await callback.bot.send_message(settings.admin_chat_id, f"👤 Замовленню #{order.id} призначено кур'єра: <b>{html_module.escape(new_courier_name)}</b>")
         
         await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
         await callback.answer(f"Кур'єра призначено: {new_courier_name}")
