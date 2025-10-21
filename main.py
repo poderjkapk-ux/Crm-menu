@@ -39,7 +39,7 @@ import sqlalchemy as sa
 from sqlalchemy import func, and_
 
 # --- Локальні імпорти ---
-from templates import ADMIN_HTML_TEMPLATE, WEB_ORDER_HTML, ADMIN_EMPLOYEE_BODY, ADMIN_ROLES_BODY, ADMIN_REPORTS_BODY, ADMIN_ORDER_FORM_BODY, ADMIN_SETTINGS_BODY, ADMIN_MENU_BODY, ADMIN_ORDER_MANAGE_BODY, ADMIN_TABLES_BODY
+from templates import ADMIN_HTML_TEMPLATE, WEB_ORDER_HTML, ADMIN_EMPLOYEE_BODY, ADMIN_ROLES_BODY, ADMIN_REPORTS_BODY, ADMIN_ORDER_FORM_BODY, ADMIN_SETTINGS_BODY, ADMIN_MENU_BODY, ADMIN_ORDER_MANAGE_BODY, ADMIN_TABLES_BODY, ADMIN_IN_HOUSE_ORDERS_BODY
 from models import *
 from admin_handlers import register_admin_handlers, parse_products_string
 from courier_handlers import register_courier_handlers
@@ -807,19 +807,15 @@ async def place_web_order(order_data: dict = Body(...), session: AsyncSession = 
 # --- ВЕБ АДМІН-ПАНЕЛЬ ---
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    orders_res = await session.execute(sa.select(Order).order_by(Order.id.desc()).limit(5))
     orders_count = await session.scalar(sa.select(sa.func.count(Order.id)))
     products_count = await session.scalar(sa.select(sa.func.count(Product.id)))
 
     body = f"""
     <div class="card"><strong>Ласкаво просимо, {username}!</strong></div>
     <div class="card"><h2>📈 Швидка статистика</h2><p><strong>Всього страв:</strong> {products_count}</p><p><strong>Всього замовлень:</strong> {orders_count}</p></div>
-    <div class="card"><h2>📦 5 останніх замовлень</h2>
-        <table><thead><tr><th>ID</th><th>Клієнт</th><th>Телефон</th><th>Сума</th></tr></thead><tbody>
-        {''.join([f"<tr><td><a href='/admin/orders?search=%23{o.id}'>#{o.id}</a></td><td>{html.escape(o.customer_name)}</td><td>{html.escape(o.phone_number)}</td><td>{o.total_price} грн</td></tr>" for o in orders_res.scalars().all()]) or "<tr><td colspan='4'>Немає замовлень</td></tr>"}
-        </tbody></table></div>"""
+    """
     
-    active_classes = {key: "" for key in ["orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["main_active"] = "active"
         
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Головна панель", body=body, **active_classes))
@@ -874,7 +870,7 @@ async def admin_products(page: int = Query(1, ge=1), q: str = Query(None, alias=
         {product_rows or "<tr><td colspan='6'>Немає страв</td></tr>"}
         </tbody></table>{pagination if pages > 1 else ''}
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["products_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Управління стравами", body=body, **active_classes))
 
@@ -927,7 +923,7 @@ async def get_edit_product_form(product_id: int, session: AsyncSession = Depends
       </form>
     </div>
     """
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["products_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Редагування страви", body=body, **active_classes))
 
@@ -1006,7 +1002,7 @@ async def admin_categories(session: AsyncSession = Depends(get_db_session), user
         {rows or "<tr><td colspan='3'>Немає категорій</td></tr>"}
         </tbody></table>
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["categories_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Категорії", body=body, **active_classes))
 
@@ -1068,7 +1064,7 @@ async def admin_menu_items(edit_id: Optional[int] = None, session: AsyncSession 
         item_show_in_telegram_checked='checked' if item_to_edit and item_to_edit.show_in_telegram else "",
         button_text="Зберегти зміни" if item_to_edit else "Додати пункт"
     )
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["menu_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Сторінки меню", body=body, **active_classes))
 
@@ -1105,12 +1101,13 @@ async def delete_menu_item(item_id: int, session: AsyncSession = Depends(get_db_
         await session.commit()
     return RedirectResponse(url="/admin/menu", status_code=303)
 
-# --- ОНОВЛЕНИЙ РОУТ ДЛЯ ЗАМОВЛЕНЬ ---
+# --- РОЗДІЛЕНІ РОУТИ ДЛЯ ЗАМОВЛЕНЬ ---
 @app.get("/admin/orders", response_class=HTMLResponse)
-async def admin_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="search"), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+async def admin_delivery_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="search"), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     per_page = 15
     offset = (page - 1) * per_page
-    query = sa.select(Order).options(joinedload(Order.status)).order_by(Order.id.desc())
+    # --- ЗМІНЕНО: Фільтр для замовлень на доставку/самовивіз ---
+    query = sa.select(Order).options(joinedload(Order.status)).where(Order.order_type.in_(['delivery', 'pickup'])).order_by(Order.id.desc())
     if q:
         search_term = q.replace('#', '')
         query = query.where(sa.or_(Order.id.like(f"%{search_term}%"), Order.customer_name.ilike(f"%{q}%"), Order.phone_number.ilike(f"%{q}%")))
@@ -1134,12 +1131,12 @@ async def admin_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="s
         </td>
     </tr>""" for o in orders])
 
-    pagination = f"<div class='pagination'>{' '.join([f'<a href=\"/admin/orders?page={i}{f'&search={q}' if q else ''}\" class=\"{'active' if i == page else ''}\">{i}</a>' for i in range(1, pages+1)])}</div>"
+    pagination = f"<div class='pagination'>{''.join([f'<a href=\"/admin/orders?page={i}{f'&search={q}' if q else ''}\" class=\"{'active' if i == page else ''}\">{i}</a>' for i in range(1, pages+1)])}</div>"
 
     body = f"""
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <h2>📋 Список замовлень</h2>
+            <h2>📋 Замовлення на доставку/самовивіз</h2>
             <a href="/admin/order/new" class="button"><i class="fa-solid fa-plus"></i> Створити замовлення</a>
         </div>
         <form action="/admin/orders" method="get" class="search-form">
@@ -1150,9 +1147,50 @@ async def admin_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="s
         {rows or "<tr><td colspan='7'>Немає замовлень</td></tr>"}
         </tbody></table>{pagination if pages > 1 else ''}
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
-    active_classes["orders_active"] = "active"
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Замовлення", body=body, **active_classes))
+    active_classes = {key: "" for key in ["main_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes["orders_active"] = "open" # Keep parent open
+    active_classes["delivery_orders_active"] = "active"
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Замовлення на доставку", body=body, **active_classes))
+
+@app.get("/admin/in_house_orders", response_class=HTMLResponse)
+async def admin_in_house_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="search"), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+    per_page = 15
+    offset = (page - 1) * per_page
+    # --- НОВИЙ РОУТ: Фільтр для замовлень у закладі ---
+    query = sa.select(Order).options(joinedload(Order.status), joinedload(Order.table)).where(Order.order_type == 'in_house').order_by(Order.id.desc())
+    if q:
+        search_term = q.replace('#', '')
+        # Пошук по ID замовлення або по назві столика
+        query = query.join(Table).where(sa.or_(Order.id.like(f"%{search_term}%"), Table.name.ilike(f"%{q}%")))
+
+    total = await session.scalar(sa.select(sa.func.count()).select_from(query.subquery()))
+    orders_res = await session.execute(query.limit(per_page).offset(offset))
+    orders = orders_res.scalars().unique().all() # .unique() для правильної роботи join
+    pages = (total // per_page) + (1 if total % per_page else 0)
+
+    rows = "".join([f"""
+    <tr>
+        <td><a href="/admin/order/manage/{o.id}" title="Керувати замовленням">#{o.id}</a></td>
+        <td>{html.escape(o.table.name if o.table else 'N/A')}</td>
+        <td>{o.total_price} грн</td>
+        <td><span class='status'>{o.status.name if o.status else '-'}</span></td>
+        <td>{html.escape(o.products[:50] + '...' if len(o.products) > 50 else o.products)}</td>
+        <td class='actions'>
+            <a href='/admin/order/manage/{o.id}' class='button-sm' title="Керувати статусом">⚙️ Керувати</a>
+        </td>
+    </tr>""" for o in orders])
+
+    pagination = f"<div class='pagination'>{''.join([f'<a href=\"/admin/in_house_orders?page={i}{f'&search={q}' if q else ''}\" class=\"{'active' if i == page else ''}\">{i}</a>' for i in range(1, pages+1)])}</div>"
+
+    body = ADMIN_IN_HOUSE_ORDERS_BODY.format(
+        search_query=q or '',
+        rows=rows or "<tr><td colspan='6'>Немає замовлень</td></tr>",
+        pagination=pagination if pages > 1 else ""
+    )
+    active_classes = {key: "" for key in ["main_active", "delivery_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes["orders_active"] = "open" # Keep parent open
+    active_classes["in_house_orders_active"] = "active"
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Замовлення у закладі", body=body, **active_classes))
 # ----------------------------------------
 
 @app.get("/admin/statuses", response_class=HTMLResponse)
@@ -1167,6 +1205,7 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
     def bool_to_icon(val):
         return '✅' if val else '❌'
 
+    # --- ЗМІНЕНО: Додано колонку та чекбокс для офіціанта ---
     rows = "".join([f"""
     <tr>
         <td>{s.id}</td>
@@ -1174,46 +1213,12 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
             <input type="text" name="name" value="{html.escape(s.name)}" style="width: 150px;" required>
             <button type="submit">💾</button>
         </form></td>
-        <td>
-            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
-                <input type="hidden" name="name" value="{html.escape(s.name)}">
-                <input type="hidden" name="field" value="notify_customer">
-                <input type="hidden" name="value" value="{'false' if s.notify_customer else 'true'}">
-                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.notify_customer)}</button>
-            </form>
-        </td>
-        <td>
-            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
-                <input type="hidden" name="name" value="{html.escape(s.name)}">
-                <input type="hidden" name="field" value="visible_to_operator">
-                <input type="hidden" name="value" value="{'false' if s.visible_to_operator else 'true'}">
-                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.visible_to_operator)}</button>
-            </form>
-        </td>
-        <td>
-            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
-                <input type="hidden" name="name" value="{html.escape(s.name)}">
-                <input type="hidden" name="field" value="visible_to_courier">
-                <input type="hidden" name="value" value="{'false' if s.visible_to_courier else 'true'}">
-                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.visible_to_courier)}</button>
-            </form>
-        </td>
-        <td>
-            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
-                <input type="hidden" name="name" value="{html.escape(s.name)}">
-                <input type="hidden" name="field" value="is_completed_status">
-                <input type="hidden" name="value" value="{'false' if s.is_completed_status else 'true'}">
-                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.is_completed_status)}</button>
-            </form>
-        </td>
-        <td>
-            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
-                <input type="hidden" name="name" value="{html.escape(s.name)}">
-                <input type="hidden" name="field" value="is_cancelled_status">
-                <input type="hidden" name="value" value="{'false' if s.is_cancelled_status else 'true'}">
-                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.is_cancelled_status)}</button>
-            </form>
-        </td>
+        <td><a href="/admin/toggle_status_field/{s.id}/notify_customer">{bool_to_icon(s.notify_customer)}</a></td>
+        <td><a href="/admin/toggle_status_field/{s.id}/visible_to_operator">{bool_to_icon(s.visible_to_operator)}</a></td>
+        <td><a href="/admin/toggle_status_field/{s.id}/visible_to_courier">{bool_to_icon(s.visible_to_courier)}</a></td>
+        <td><a href="/admin/toggle_status_field/{s.id}/visible_to_waiter">{bool_to_icon(s.visible_to_waiter)}</a></td>
+        <td><a href="/admin/toggle_status_field/{s.id}/is_completed_status">{bool_to_icon(s.is_completed_status)}</a></td>
+        <td><a href="/admin/toggle_status_field/{s.id}/is_cancelled_status">{bool_to_icon(s.is_cancelled_status)}</a></td>
         <td class="actions">
             <a href="/admin/delete_status/{s.id}" onclick="return confirm('Ви впевнені?');" class="button-sm danger">🗑️</a>
         </td>
@@ -1230,6 +1235,7 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
             <div class="checkbox-group"><input type="checkbox" id="notify_customer" name="notify_customer" value="true" checked><label for="notify_customer">Сповіщати клієнта</label></div>
             <div class="checkbox-group"><input type="checkbox" id="visible_to_operator" name="visible_to_operator" value="true" checked><label for="visible_to_operator">Показувати оператору</label></div>
             <div class="checkbox-group"><input type="checkbox" id="visible_to_courier" name="visible_to_courier" value="true"><label for="visible_to_courier">Показувати кур'єру</label></div>
+            <div class="checkbox-group"><input type="checkbox" id="visible_to_waiter" name="visible_to_waiter" value="true"><label for="visible_to_waiter">Показувати офіціанту</label></div>
             <div class="checkbox-group"><input type="checkbox" id="is_completed_status" name="is_completed_status" value="true"><label for="is_completed_status">Цей статус ЗАВЕРШУЄ замовлення</label></div>
             <div class="checkbox-group"><input type="checkbox" id="is_cancelled_status" name="is_cancelled_status" value="true"><label for="is_cancelled_status">Цей статус СКАСОВУЄ замовлення</label></div>
             <button type="submit">Додати</button>
@@ -1238,56 +1244,61 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
     <div class="card">
         <h2>Список статусів</h2>
         <table>
-            <thead><tr><th>ID</th><th>Назва</th><th>Сповіщ.</th><th>Оператору</th><th>Кур'єру</th><th>Завершує</th><th>Скасовує</th><th>Дії</th></tr></thead>
-            <tbody>{rows or "<tr><td colspan='8'>Немає статусів</td></tr>"}</tbody>
+            <thead><tr><th>ID</th><th>Назва</th><th>Клієнту</th><th>Оператору</th><th>Кур'єру</th><th>Офіціанту</th><th>Завершує</th><th>Скасовує</th><th>Дії</th></tr></thead>
+            <tbody>{rows or "<tr><td colspan='9'>Немає статусів</td></tr>"}</tbody>
         </table>
     </div>
     """
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "reports_active", "settings_active"]}
     active_classes["statuses_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Статуси замовлень", body=body, **active_classes))
 
 @app.post("/admin/add_status")
 async def add_status(
     name: str = Form(...),
-    notify_customer: Optional[bool] = Form(False),
-    visible_to_operator: Optional[bool] = Form(False),
-    visible_to_courier: Optional[bool] = Form(False),
-    is_completed_status: Optional[bool] = Form(False),
-    is_cancelled_status: Optional[bool] = Form(False),
+    notify_customer: bool = Form(False),
+    visible_to_operator: bool = Form(False),
+    visible_to_courier: bool = Form(False),
+    visible_to_waiter: bool = Form(False),
+    is_completed_status: bool = Form(False),
+    is_cancelled_status: bool = Form(False),
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
     new_status = OrderStatus(
         name=name,
-        notify_customer=bool(notify_customer),
-        visible_to_operator=bool(visible_to_operator),
-        visible_to_courier=bool(visible_to_courier),
-        is_completed_status=bool(is_completed_status),
-        is_cancelled_status=bool(is_cancelled_status)
+        notify_customer=notify_customer,
+        visible_to_operator=visible_to_operator,
+        visible_to_courier=visible_to_courier,
+        visible_to_waiter=visible_to_waiter,
+        is_completed_status=is_completed_status,
+        is_cancelled_status=is_cancelled_status
     )
     session.add(new_status)
     await session.commit()
     return RedirectResponse(url="/admin/statuses", status_code=303)
 
-@app.post("/admin/edit_status/{status_id}")
-async def edit_status(
-    status_id: int,
-    name: Optional[str] = Form(None),
-    field: Optional[str] = Form(None),
-    value: Optional[str] = Form(None),
-    session: AsyncSession = Depends(get_db_session),
-    username: str = Depends(check_credentials)
-):
+@app.get("/admin/toggle_status_field/{status_id}/{field}")
+async def toggle_status_field(status_id: int, field: str, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     status_to_edit = await session.get(OrderStatus, status_id)
     if not status_to_edit:
         raise HTTPException(status_code=404, detail="Статус не знайдено")
+    
+    valid_fields = ["notify_customer", "visible_to_operator", "visible_to_courier", "visible_to_waiter", "is_completed_status", "is_cancelled_status"]
+    if field in valid_fields:
+        current_value = getattr(status_to_edit, field)
+        setattr(status_to_edit, field, not current_value)
+        await session.commit()
+    
+    return RedirectResponse(url="/admin/statuses", status_code=303)
 
-    if name and not field:
-        status_to_edit.name = name
-    elif field in ["notify_customer", "visible_to_operator", "visible_to_courier", "is_completed_status", "is_cancelled_status"]:
-        setattr(status_to_edit, field, value.lower() == 'true')
 
+@app.post("/admin/edit_status/{status_id}")
+async def edit_status(status_id: int, name: str = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+    status_to_edit = await session.get(OrderStatus, status_id)
+    if not status_to_edit:
+        raise HTTPException(status_code=404, detail="Статус не знайдено")
+    status_to_edit.name = name
     await session.commit()
     return RedirectResponse(url="/admin/statuses", status_code=303)
 
@@ -1314,6 +1325,7 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
         <td>{html.escape(r.name)}</td>
         <td>{'✅' if r.can_manage_orders else '❌'}</td>
         <td>{'✅' if r.can_be_assigned else '❌'}</td>
+        <td>{'✅' if r.can_serve_tables else '❌'}</td>
         <td class="actions">
             <a href="/admin/edit_role/{r.id}" class="button-sm">✏️</a>
             <a href="/admin/delete_role/{r.id}" onclick="return confirm('Ви впевнені?');" class="button-sm danger">🗑️</a>
@@ -1321,16 +1333,16 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
     </tr>""" for r in roles])
 
     if not rows:
-        rows = "<tr><td colspan='5'>Немає ролей</td></tr>"
+        rows = "<tr><td colspan='6'>Немає ролей</td></tr>"
 
     body = ADMIN_ROLES_BODY.format(rows=rows)
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["employees_active"] = "active" # Part of employees section
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Ролі співробітників", body=body, **active_classes))
 
 @app.post("/admin/add_role")
-async def add_role(name: str = Form(...), can_manage_orders: Optional[bool] = Form(False), can_be_assigned: Optional[bool] = Form(False), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    new_role = Role(name=name, can_manage_orders=bool(can_manage_orders), can_be_assigned=bool(can_be_assigned))
+async def add_role(name: str = Form(...), can_manage_orders: Optional[bool] = Form(False), can_be_assigned: Optional[bool] = Form(False), can_serve_tables: Optional[bool] = Form(False), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+    new_role = Role(name=name, can_manage_orders=bool(can_manage_orders), can_be_assigned=bool(can_be_assigned), can_serve_tables=bool(can_serve_tables))
     session.add(new_role)
     await session.commit()
     return RedirectResponse(url="/admin/roles", status_code=303)
@@ -1361,7 +1373,7 @@ async def get_edit_role_form(role_id: int, session: AsyncSession = Depends(get_d
             <button type="submit">Зберегти зміни</button>
         </form>
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["employees_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Редагування ролі", body=body, **active_classes))
 
@@ -1414,7 +1426,7 @@ async def admin_employees(session: AsyncSession = Depends(get_db_session), usern
         rows = '<tr><td colspan="7">Немає співробітників</td></tr>'
 
     body = ADMIN_EMPLOYEE_BODY.format(role_options=role_options, rows=rows)
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["employees_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Співробітники", body=body, **active_classes))
 
@@ -1450,7 +1462,7 @@ async def get_edit_employee_form(employee_id: int, session: AsyncSession = Depen
             <button type="submit">Зберегти зміни</button>
         </form>
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["employees_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Редагування співробітника", body=body, **active_classes))
 
@@ -1486,7 +1498,7 @@ async def admin_reports_menu(username: str = Depends(check_credentials)):
         </ul>
     </div>
     """
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "settings_active"]}
     active_classes["reports_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Звіти", body=body, **active_classes))
 
@@ -1540,7 +1552,7 @@ async def report_couriers(
         date_to_formatted=date_to.strftime("%d.%m.%Y"),
         report_rows=report_rows
     )
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "settings_active"]}
     active_classes["reports_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Звіт по кур'єрах", body=body, **active_classes))
 
@@ -1565,7 +1577,7 @@ async def admin_settings(session: AsyncSession = Depends(get_db_session), userna
         r_keeper_payment_type=settings.r_keeper_payment_type or '',
         cache_buster=secrets.token_hex(4)
     )
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "delivery_orders_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active"]}
     active_classes["settings_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Налаштування", body=body, **active_classes))
 
@@ -1655,8 +1667,9 @@ async def get_add_order_form(username: str = Depends(check_credentials)):
     </script>
     """
     body = ADMIN_ORDER_FORM_BODY + script_data_injection
-    active_classes = {key: "" for key in ["main_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
-    active_classes["orders_active"] = "active"
+    active_classes = {key: "" for key in ["main_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes["orders_active"] = "open"
+    active_classes["delivery_orders_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Нове замовлення", body=body, **active_classes))
 
 @app.get("/admin/order/edit/{order_id}", response_class=HTMLResponse)
@@ -1694,8 +1707,9 @@ async def get_edit_order_form(order_id: int, session: AsyncSession = Depends(get
     </script>
     """
     body = ADMIN_ORDER_FORM_BODY + script_injection
-    active_classes = {key: "" for key in ["main_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
-    active_classes["orders_active"] = "active"
+    active_classes = {key: "" for key in ["main_active", "in_house_orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes["orders_active"] = "open"
+    active_classes["delivery_orders_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Редагування замовлення #{order.id}", body=body, **active_classes))
 
 
