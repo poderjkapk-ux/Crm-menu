@@ -7,12 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from aiogram import Bot
 from urllib.parse import quote_plus
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
+import re # <--- ДОДАНО
 
 from models import Order, OrderStatus, Employee, Role, OrderStatusHistory, Settings
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_ORDER_MANAGE_BODY
 from dependencies import get_db_session, check_credentials
 from notification_manager import notify_all_parties_on_status_change
-from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -188,9 +190,10 @@ async def web_assign_courier(
                         map_url = f"https://maps.google.com/?q={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
                         
-                    # НОВЕ: Кнопка для дзвінка клієнту
+                    # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
                     if order.phone_number:
-                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
+                        clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
+                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
                     
                     await admin_bot.send_message(
                         new_courier.telegram_user_id,
