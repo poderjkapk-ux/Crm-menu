@@ -178,9 +178,11 @@ def register_admin_handlers(dp: Dispatcher):
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
         if employee:
             if employee.role.can_manage_orders:
-                return await message.answer(f"✅ Ви вже авторизовані як оператор.", reply_markup=get_operator_keyboard(employee.is_on_shift))
+                # ОНОВЛЕНО: Передаємо об'єкт employee
+                return await message.answer(f"✅ Ви вже авторизовані як оператор.", reply_markup=get_operator_keyboard(employee))
             elif employee.role.can_be_assigned:
-                return await message.answer("❌ Ви авторизовані як кур'єр. Для входу як оператор, спочатку вийдіть із системи.", reply_markup=get_courier_keyboard(employee.is_on_shift))
+                # ОНОВЛЕНО: Передаємо об'єкт employee
+                return await message.answer("❌ Ви авторизовані як кур'єр. Для входу як оператор, спочатку вийдіть із системи.", reply_markup=get_courier_keyboard(employee))
         await state.set_state(OperatorAuthStates.waiting_for_phone)
         kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_auth")).as_markup()
         await message.answer("Будь ласка, введіть номер телефону для ролі **оператора**:", reply_markup=kb)
@@ -193,7 +195,7 @@ def register_admin_handlers(dp: Dispatcher):
             employee.telegram_user_id = message.from_user.id
             await session.commit()
             await state.clear()
-            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=get_operator_keyboard(employee.is_on_shift))
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=get_operator_keyboard(employee))
         else:
             await message.answer("❌ Співробітника з таким номером не знайдено або він не має прав Оператора.")
     
@@ -350,7 +352,7 @@ def register_admin_handlers(dp: Dispatcher):
     @dp.callback_query(F.data.startswith("admin_add_item_start_"))
     async def admin_add_item_start(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
-        categories = (await session.execute(select(Category).order_by(Category.sort_order, Category.name))).scalars().all()
+        categories = (await session.execute(select(Category).where(Category.show_on_delivery_site == True).order_by(Category.sort_order, Category.name))).scalars().all()
         kb = InlineKeyboardBuilder()
         for cat in categories:
             kb.add(InlineKeyboardButton(text=cat.name, callback_data=f"admin_show_cat_{order_id}_{cat.id}_1"))
@@ -360,7 +362,8 @@ def register_admin_handlers(dp: Dispatcher):
 
     @dp.callback_query(F.data.startswith("admin_show_cat_"))
     async def admin_show_category(callback: CallbackQuery, session: AsyncSession):
-        order_id, category_id = map(int, callback.data.split("_")[3:5])
+        # Отримуємо category_id з колбеку, ігноруючи номер сторінки (оскільки пагінація не реалізована для цього меню)
+        order_id, category_id = map(int, callback.data.split("_")[3:5]) 
         products = (await session.execute(select(Product).where(Product.category_id == category_id, Product.is_active == True))).scalars().all()
         kb = InlineKeyboardBuilder()
         for prod in products:
