@@ -2021,7 +2021,11 @@ ADMIN_CLIENT_DETAIL_BODY = """
 </script>
 """
 
-# НОВИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
+# templates.py
+
+# ... (весь ваш існуючий код до цього моменту) ...
+
+# ОНОВЛЕННИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
 IN_HOUSE_MENU_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -2042,13 +2046,19 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
             --bg-color: #193223; --card-bg: #213A28; --text-color: #E5D5BF;
             --primary-color: #B1864B; --primary-hover-color: #c9a36b;
             --primary-glow-color: rgba(177, 134, 75, 0.3); --border-color: #4a635a;
-            --dark-text-for-accent: #193223; --side-padding: 20px;
+            --dark-text-for-accent: #193223; --side-padding: 15px;
         }}
         @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
         @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
         html {{ scroll-behavior: smooth; }}
         body {{ font-family: 'Golos Text', sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); }}
+        .main-wrapper {{
+            max-width: 900px; /* NEW: Set a max-width for the content */
+            margin: 0 auto; /* NEW: Center the content */
+            background-color: var(--bg-color);
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }}
         .container {{ width: 100%; margin: 0 auto; padding: 0; }}
         header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
         .header-logo {{ height: 100px; width: auto; }}
@@ -2061,17 +2071,17 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
         #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); }}
         .category-section {{ padding-top: 90px; margin-top: -90px; }}
         .category-title {{ font-family: 'Playfair Display', serif; font-size: 2.2em; color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px; text-align: center; border-bottom: 1px solid var(--border-color); }}
-        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }}
+        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }}
         .product-card {{ background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; animation: fadeIn 0.5s ease-out forwards; opacity: 0; }}
-        .product-image {{ width: 100%; height: 220px; object-fit: cover; }}
-        .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
-        .product-name {{ font-family: 'Playfair Display', serif; font-size: 1.7em; margin: 0 0 10px; }}
+        .product-image {{ width: 100%; height: 200px; object-fit: cover; }}
+        .product-info {{ padding: 20px; flex-grow: 1; display: flex; flex-direction: column; }}
+        .product-name {{ font-family: 'Playfair Display', serif; font-size: 1.5em; margin: 0 0 10px; }}
         .product-desc {{ font-size: 0.9em; color: #bbb; margin: 0 0 20px; flex-grow: 1; }}
         .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
-        .product-price {{ font-family: 'Playfair Display', serif; font-size: 1.8em; color: var(--primary-color); }}
-        .add-to-cart-btn {{ background: var(--primary-color); color: var(--dark-text-for-accent); border: none; padding: 12px 22px; border-radius: 5px; cursor: pointer; font-weight: 600; transition: background-color 0.3s; }}
+        .product-price {{ font-family: 'Playfair Display', serif; font-size: 1.6em; color: var(--primary-color); }}
+        .add-to-cart-btn {{ background: var(--primary-color); color: var(--dark-text-for-accent); border: none; padding: 10px 18px; border-radius: 5px; cursor: pointer; font-weight: 600; transition: background-color 0.3s; }}
         .add-to-cart-btn.added {{ background-color: #0c8a5d; color: white; }}
-        #cart-sidebar {{ position: fixed; top: 0; right: -100%; width: 400px; height: 100%; background-color: rgba(25, 50, 35, 0.85); backdrop-filter: blur(15px); border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.5); transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000; }}
+        #cart-sidebar {{ position: fixed; top: 0; right: -100%; width: 100%; max-width: 420px; height: 100%; background-color: rgba(25, 50, 35, 0.85); backdrop-filter: blur(15px); border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.5); transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000; }}
         #cart-sidebar.open {{ right: 0; }}
         .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
         .cart-header h2 {{ margin: 0; color: var(--primary-color); font-family: 'Playfair Display', serif;}}
@@ -2101,13 +2111,15 @@ IN_HOUSE_MENU_HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <header>
-        {logo_html}
-        <h1>{table_name}</h1>
-    </header>
-    <div id="category-nav" class="category-nav"></div>
-    <div class="container" id="menu"></div>
-    <div style="height: 100px;"></div> 
+    <div class="main-wrapper">
+        <header>
+            {logo_html}
+            <h1>{table_name}</h1>
+        </header>
+        <div id="category-nav" class="category-nav"></div>
+        <div class="container" id="menu"></div>
+        <div style="height: 100px;"></div> 
+    </div>
     <button id="cart-toggle">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z"></path></svg>
         <span id="cart-count">0</span>
