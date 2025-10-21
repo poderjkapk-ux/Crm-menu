@@ -319,8 +319,13 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
-            map_query = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
+            # ВИПРАВЛЕНО: Правильне посилання на карту
+            map_query = f"https://maps.google.com/?q={encoded_address}"
             kb.row(InlineKeyboardButton(text="🗺️ Показати на карті", url=map_query))
+            
+        # НОВЕ: Кнопка для дзвінка клієнту
+        if order.phone_number:
+            kb.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
 
         kb.row(InlineKeyboardButton(text="⬅️ До моїх замовлень", callback_data="show_courier_orders_list"))
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
