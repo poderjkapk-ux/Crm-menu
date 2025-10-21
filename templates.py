@@ -2020,3 +2020,296 @@ ADMIN_CLIENT_DETAIL_BODY = """
     }}
 </script>
 """
+
+# НОВИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
+IN_HOUSE_MENU_HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Меню - {table_name}</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
+    <link rel="manifest" href="/static/favicons/site.webmanifest">
+    <link rel="shortcut icon" href="/static/favicons/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Golos+Text:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #193223; --card-bg: #213A28; --text-color: #E5D5BF;
+            --primary-color: #B1864B; --primary-hover-color: #c9a36b;
+            --primary-glow-color: rgba(177, 134, 75, 0.3); --border-color: #4a635a;
+            --dark-text-for-accent: #193223; --side-padding: 20px;
+        }}
+        @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+        @keyframes popIn {{ from {{ opacity: 0; transform: scale(0.95); }} to {{ opacity: 1; transform: scale(1); }} }}
+        @keyframes cartPop {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.2); }} 100% {{ transform: scale(1); }} }}
+        html {{ scroll-behavior: smooth; }}
+        body {{ font-family: 'Golos Text', sans-serif; margin: 0; background-color: var(--bg-color); color: var(--text-color); }}
+        .container {{ width: 100%; margin: 0 auto; padding: 0; }}
+        header {{ text-align: center; padding: 40px var(--side-padding) 20px; }}
+        .header-logo {{ height: 100px; width: auto; }}
+        header h1 {{ font-family: 'Playfair Display', serif; font-size: 2.5em; color: var(--primary-color); margin: 10px 0 0; }}
+        .category-nav {{ display: flex; position: sticky; top: -1px; background-color: rgba(25, 50, 35, 0.9); backdrop-filter: blur(12px); z-index: 100; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; box-shadow: 0 4px 20px rgba(0,0,0,0.4); padding: 15px 0; }}
+        .category-nav::-webkit-scrollbar {{ display: none; }}
+        .category-nav a {{ color: var(--text-color); text-decoration: none; padding: 10px 25px; border: 1px solid var(--border-color); border-radius: 20px; transition: all 0.3s ease; font-weight: 500; flex-shrink: 0; margin: 0 10px; }}
+        .category-nav a:first-child {{ margin-left: var(--side-padding); }} .category-nav a:last-child {{ margin-right: var(--side-padding); }}
+        .category-nav a.active, .category-nav a:hover {{ background-color: var(--primary-color); color: var(--dark-text-for-accent); border-color: var(--primary-color); }}
+        #menu {{ display: grid; grid-template-columns: 1fr; gap: 40px; padding: 0 var(--side-padding); }}
+        .category-section {{ padding-top: 90px; margin-top: -90px; }}
+        .category-title {{ font-family: 'Playfair Display', serif; font-size: 2.2em; color: var(--primary-color); padding-bottom: 15px; margin-bottom: 40px; text-align: center; border-bottom: 1px solid var(--border-color); }}
+        .products-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }}
+        .product-card {{ background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; animation: fadeIn 0.5s ease-out forwards; opacity: 0; }}
+        .product-image {{ width: 100%; height: 220px; object-fit: cover; }}
+        .product-info {{ padding: 25px; flex-grow: 1; display: flex; flex-direction: column; }}
+        .product-name {{ font-family: 'Playfair Display', serif; font-size: 1.7em; margin: 0 0 10px; }}
+        .product-desc {{ font-size: 0.9em; color: #bbb; margin: 0 0 20px; flex-grow: 1; }}
+        .product-footer {{ display: flex; justify-content: space-between; align-items: center; }}
+        .product-price {{ font-family: 'Playfair Display', serif; font-size: 1.8em; color: var(--primary-color); }}
+        .add-to-cart-btn {{ background: var(--primary-color); color: var(--dark-text-for-accent); border: none; padding: 12px 22px; border-radius: 5px; cursor: pointer; font-weight: 600; transition: background-color 0.3s; }}
+        .add-to-cart-btn.added {{ background-color: #0c8a5d; color: white; }}
+        #cart-sidebar {{ position: fixed; top: 0; right: -100%; width: 400px; height: 100%; background-color: rgba(25, 50, 35, 0.85); backdrop-filter: blur(15px); border-left: 1px solid var(--border-color); box-shadow: -5px 0 25px rgba(0,0,0,0.5); transition: right 0.4s ease-in-out; display: flex; flex-direction: column; z-index: 1000; }}
+        #cart-sidebar.open {{ right: 0; }}
+        .cart-header {{ padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }}
+        .cart-header h2 {{ margin: 0; color: var(--primary-color); font-family: 'Playfair Display', serif;}}
+        #close-cart-btn {{ background: none; border: none; color: white; font-size: 2.5em; cursor: pointer; line-height: 1; }}
+        .cart-items {{ flex-grow: 1; overflow-y: auto; padding: 20px; }}
+        .cart-item {{ animation: popIn 0.3s ease-out; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }}
+        .cart-item-info {{ flex-grow: 1; }}
+        .cart-item-name {{ font-weight: 600; }}
+        .cart-item-price {{ color: #ccc; font-size: 0.9em; }}
+        .cart-item-controls {{ display: flex; align-items: center; }}
+        .cart-item-controls button {{ background: #333; border: 1px solid var(--border-color); color: var(--text-color); width: 28px; height: 28px; cursor: pointer; border-radius: 50%; }}
+        .cart-item-controls span {{ margin: 0 10px; }}
+        .cart-footer {{ padding: 20px; border-top: 1px solid var(--border-color); }}
+        .cart-total {{ display: flex; justify-content: space-between; font-size: 1.2em; font-weight: 700; margin-bottom: 20px; }}
+        #place-order-btn {{ width: 100%; padding: 15px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; }}
+        #place-order-btn:disabled {{ background-color: #555; cursor: not-allowed; }}
+        #cart-toggle {{ position: fixed; bottom: 20px; right: 20px; background-color: var(--primary-color); color: var(--dark-text-for-accent); border: none; border-radius: 50%; width: 60px; height: 60px; cursor: pointer; z-index: 1001; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }}
+        #cart-toggle.popping {{ animation: cartPop 0.4s ease; }}
+        #cart-toggle svg {{ width: 28px; height: 28px; }}
+        #cart-count {{ position: absolute; top: -5px; right: -5px; background: var(--primary-color); color: var(--dark-text-for-accent); border-radius: 50%; width: 25px; height: 25px; font-size: 0.8em; display: flex; justify-content: center; align-items: center; font-weight: 700; border: 2px solid var(--card-bg);}}
+        .action-buttons {{ padding: 0 20px 20px; }}
+        .action-btn {{ width: 100%; padding: 15px; margin-bottom: 10px; font-size: 1.1em; cursor: pointer; border-radius: 5px; font-weight: 700; border: 1px solid var(--primary-color); }}
+        .call-waiter-btn {{ background-color: transparent; color: var(--primary-color); }}
+        .request-bill-btn {{ background-color: transparent; color: var(--primary-color); }}
+        .toast {{ position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background-color: #213A28; color: #E5D5BF; padding: 15px 25px; border-radius: 8px; z-index: 3000; opacity: 0; transition: opacity 0.5s, transform 0.5s; pointer-events: none; border: 1px solid var(--primary-color); box-shadow: 0 0 20px var(--primary-glow-color); }}
+        .toast.show {{ opacity: 1; transform: translateX(-50%) translateY(-20px); }}
+    </style>
+</head>
+<body>
+    <header>
+        {logo_html}
+        <h1>{table_name}</h1>
+    </header>
+    <div id="category-nav" class="category-nav"></div>
+    <div class="container" id="menu"></div>
+    <div style="height: 100px;"></div> 
+    <button id="cart-toggle">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z"></path></svg>
+        <span id="cart-count">0</span>
+    </button>
+    <aside id="cart-sidebar">
+        <div class="cart-header">
+            <h2>Ваше замовлення</h2>
+            <button id="close-cart-btn">&times;</button>
+        </div>
+        <div id="cart-items-container" class="cart-items"></div>
+        <div class="cart-footer">
+            <div class="cart-total">
+                <span>Всього:</span>
+                <span id="cart-total-price">0 грн</span>
+            </div>
+            <button id="place-order-btn" disabled>Замовити</button>
+        </div>
+        <div class="action-buttons">
+            <button class="action-btn call-waiter-btn">Викликати офіціанта</button>
+            <button class="action-btn request-bill-btn">Попросити рахунок</button>
+        </div>
+    </aside>
+    <div id="toast" class="toast"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {{
+            const TABLE_ID = {table_id};
+            let cart = {{}};
+            const menuData = {menu_data};
+
+            const menuContainer = document.getElementById('menu');
+            const categoryNav = document.getElementById('category-nav');
+            const cartSidebar = document.getElementById('cart-sidebar');
+            const cartToggle = document.getElementById('cart-toggle');
+            const closeCartBtn = document.getElementById('close-cart-btn');
+            const cartItemsContainer = document.getElementById('cart-items-container');
+            const cartTotalPriceEl = document.getElementById('cart-total-price');
+            const cartCountEl = document.getElementById('cart-count');
+            const placeOrderBtn = document.getElementById('place-order-btn');
+            const toastEl = document.getElementById('toast');
+            
+            const showToast = (message) => {{
+                toastEl.textContent = message;
+                toastEl.classList.add('show');
+                setTimeout(() => {{
+                    toastEl.classList.remove('show');
+                }}, 3000);
+            }};
+
+            const updateCartView = () => {{
+                cartItemsContainer.innerHTML = '';
+                let totalPrice = 0;
+                let totalCount = 0;
+                const items = Object.values(cart);
+                if (items.length > 0) {{
+                    items.forEach(item => {{
+                        totalPrice += item.price * item.quantity;
+                        totalCount += item.quantity;
+                        const cartItem = document.createElement('div');
+                        cartItem.className = 'cart-item';
+                        cartItem.innerHTML = `
+                            <div class="cart-item-info">
+                                <div class="cart-item-name">${{item.name}}</div>
+                                <div class="cart-item-price">${{item.quantity}} x ${{item.price}} грн</div>
+                            </div>
+                            <div class="cart-item-controls">
+                                <button data-id="${{item.id}}" class="change-quantity">-</button>
+                                <span>${{item.quantity}}</span>
+                                <button data-id="${{item.id}}" class="change-quantity">+</button>
+                            </div>`;
+                        cartItemsContainer.appendChild(cartItem);
+                    }});
+                    placeOrderBtn.disabled = false;
+                }} else {{
+                    cartItemsContainer.innerHTML = '<p style="text-align:center; color:#888;">Ваш кошик порожній</p>';
+                    placeOrderBtn.disabled = true;
+                }}
+                cartTotalPriceEl.textContent = `${{totalPrice.toFixed(2)}} грн`;
+                cartCountEl.textContent = totalCount;
+                cartCountEl.style.display = totalCount > 0 ? 'flex' : 'none';
+            }};
+
+            const renderMenu = (data) => {{
+                menuContainer.innerHTML = '';
+                categoryNav.innerHTML = '';
+                data.categories.forEach((category, index) => {{
+                    const navLink = document.createElement('a');
+                    navLink.href = `#category-${{category.id}}`;
+                    navLink.textContent = category.name;
+                    categoryNav.appendChild(navLink);
+
+                    const categorySection = document.createElement('section');
+                    categorySection.className = 'category-section';
+                    categorySection.id = `category-${{category.id}}`;
+                    categorySection.innerHTML = `<h2 class="category-title">${{category.name}}</h2>`;
+                    
+                    const productsGrid = document.createElement('div');
+                    productsGrid.className = 'products-grid';
+                    const products = data.products.filter(p => p.category_id === category.id);
+                    products.forEach((product, pIndex) => {{
+                        const productCard = document.createElement('div');
+                        productCard.className = 'product-card';
+                        productCard.style.animationDelay = `${{pIndex * 0.05}}s`;
+                        productCard.innerHTML = `
+                            <img src="/${{product.image_url || 'static/images/placeholder.jpg'}}" alt="${{product.name}}" class="product-image">
+                            <div class="product-info">
+                                <h3 class="product-name">${{product.name}}</h3>
+                                <p class="product-desc">${{product.description || ''}}</p>
+                                <div class="product-footer">
+                                    <span class="product-price">${{product.price}} грн</span>
+                                    <button class="add-to-cart-btn" data-id="${{product.id}}" data-name="${{product.name}}" data-price="${{product.price}}">Додати</button>
+                                </div>
+                            </div>`;
+                        productsGrid.appendChild(productCard);
+                    }});
+                    categorySection.appendChild(productsGrid);
+                    menuContainer.appendChild(categorySection);
+                }});
+            }};
+            
+            menuContainer.addEventListener('click', e => {{
+                if (e.target.classList.contains('add-to-cart-btn')) {{
+                    const button = e.target;
+                    const id = button.dataset.id;
+                    if (cart[id]) {{
+                        cart[id].quantity++;
+                    }} else {{
+                        cart[id] = {{
+                            id: id, name: button.dataset.name, price: parseInt(button.dataset.price), quantity: 1
+                        }};
+                    }}
+                    updateCartView();
+                    cartToggle.classList.add('popping');
+                    setTimeout(() => cartToggle.classList.remove('popping'), 400);
+                    button.textContent = '✓ Додано';
+                    button.classList.add('added');
+                    setTimeout(() => {{
+                        button.textContent = 'Додати';
+                        button.classList.remove('added');
+                    }}, 1500);
+                }}
+            }});
+
+            cartItemsContainer.addEventListener('click', e => {{
+                const target = e.target;
+                const id = target.dataset.id;
+                if (!id) return;
+                if (target.classList.contains('change-quantity')) {{
+                    if (target.textContent === '+') {{
+                        cart[id].quantity++;
+                    }} else {{
+                        cart[id].quantity--;
+                        if (cart[id].quantity === 0) delete cart[id];
+                    }}
+                    updateCartView();
+                }}
+            }});
+            
+            cartToggle.addEventListener('click', () => cartSidebar.classList.add('open'));
+            closeCartBtn.addEventListener('click', () => cartSidebar.classList.remove('open'));
+
+            document.querySelector('.call-waiter-btn').addEventListener('click', async () => {{
+                try {{
+                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/call_waiter`, {{ method: 'POST' }});
+                    const result = await response.json();
+                    showToast(result.message);
+                }} catch (error) {{ showToast('Не вдалося викликати офіціанта.'); }}
+            }});
+            
+            document.querySelector('.request-bill-btn').addEventListener('click', async () => {{
+                 try {{
+                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/request_bill`, {{ method: 'POST' }});
+                    const result = await response.json();
+                    showToast(result.message);
+                }} catch (error) {{ showToast('Не вдалося попросити рахунок.'); }}
+            }});
+
+            placeOrderBtn.addEventListener('click', async () => {{
+                const items = Object.values(cart);
+                if (items.length === 0) return;
+                try {{
+                    const response = await fetch(`/api/menu/table/${{TABLE_ID}}/place_order`, {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(items)
+                    }});
+                    const result = await response.json();
+                    showToast(result.message);
+                    if (response.ok) {{
+                        cart = {{}};
+                        updateCartView();
+                        cartSidebar.classList.remove('open');
+                    }}
+                }} catch (error) {{
+                    showToast('Помилка при відправці замовлення.');
+                }}
+            }});
+            
+            renderMenu(menuData);
+            updateCartView();
+        }});
+    </script>
+</body>
+</html>
+"""
