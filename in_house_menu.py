@@ -1,6 +1,6 @@
 # in_house_menu.py
 
-import html
+import html as html_module
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
@@ -57,7 +57,7 @@ async def get_in_house_menu(table_id: int, request: Request, session: AsyncSessi
     menu_data = json.dumps({"categories": categories, "products": products})
 
     return HTMLResponse(content=IN_HOUSE_MENU_HTML_TEMPLATE.format(
-        table_name=html.escape(table.name),
+        table_name=html_module.escape(table.name),
         table_id=table.id,
         logo_html=logo_html,
         menu_data=menu_data
@@ -69,7 +69,7 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
     waiter = table.assigned_waiter
-    message_text = f"❗️ <b>Виклик зі столика: {html.escape(table.name)}</b>"
+    message_text = f"❗️ <b>Виклик зі столика: {html_module.escape(table.name)}</b>"
     
     admin_bot = await get_admin_bot(session)
     if not admin_bot:
@@ -99,7 +99,7 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
     waiter = table.assigned_waiter
-    message_text = f"💰 <b>Запит на розрахунок зі столика: {html.escape(table.name)}</b>"
+    message_text = f"💰 <b>Запит на розрахунок зі столика: {html_module.escape(table.name)}</b>"
     
     admin_bot = await get_admin_bot(session)
     if not admin_bot:
