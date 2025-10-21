@@ -453,7 +453,9 @@ def register_admin_handlers(dp: Dispatcher):
                     
                     # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
                     if order.phone_number:
-                        clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
+                        clean_phone = re.sub(r'[^0-9\+]', '', order.phone_number)
+                        if clean_phone and clean_phone[0] != '+':
+                            clean_phone = '+' + clean_phone
                         kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
                         
                     await callback.bot.send_message(
