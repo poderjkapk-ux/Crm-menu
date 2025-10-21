@@ -139,9 +139,14 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
     kb.adjust(1)
     
     if is_callback:
-        await message.edit_text(text, reply_markup=kb.as_markup())
+        try:
+            await message.edit_text(text, reply_markup=kb.as_markup())
+        except TelegramBadRequest: # If message is photo or something else
+            await message.delete()
+            await message.answer(text, reply_markup=kb.as_markup())
     else:
         await message.answer(text, reply_markup=kb.as_markup())
+
 
 async def start_handler(message: Message, state: FSMContext, session: AsyncSession, **kwargs: Dict[str, Any]):
     await state.clear()
@@ -263,7 +268,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
                  employee.current_order_id = None
             if employee.role.can_serve_tables:
                 tables_to_unassign = await session.scalars(select(Table).where(Table.assigned_waiter_id == employee.id))
-                for table in tables_to_unassign:
+                for table in tables_to_unassign.all():
                     table.assigned_waiter_id = None
 
             await session.commit()
@@ -335,7 +340,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
         order_id, new_status_id = map(int, callback.data.split("_")[3:])
         
-        order = await session.get(Order, order_id)
+        order = await session.get(Order, order_id, options=[joinedload(Order.table)])
         if not order: return await callback.answer("Заказ не найден.")
         
         new_status = await session.get(OrderStatus, new_status_id)
@@ -361,7 +366,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
         await callback.answer(alert_text)
         
         if order.order_type == "in_house":
-            await show_waiter_table_orders(callback, session)
+            # After changing status, return to the manage view
+            await manage_in_house_order_handler(callback, session, order_id=order_id)
         else:
             await show_courier_orders(callback, session)
             
@@ -373,53 +379,37 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if not table:
             return await callback.answer("Столик не найден!", show_alert=True)
 
-        final_statuses = await session.scalars(select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True)))
-        active_orders = await session.scalars(select(Order).where(Order.table_id == table_id, Order.status_id.not_in(final_statuses.all())).options(joinedload(Order.status)))
+        final_statuses_res = await session.execute(select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True)))
+        final_statuses = final_statuses_res.scalars().all()
         
+        active_orders_res = await session.execute(select(Order).where(Order.table_id == table_id, Order.status_id.not_in(final_statuses)).options(joinedload(Order.status)))
+        active_orders = active_orders_res.scalars().all()
+
         text = f"<b>Столик: {html.escape(table.name)}</b>\n\nАктивные заказы:\n"
         kb = InlineKeyboardBuilder()
-        if not active_orders.all():
+        if not active_orders:
             text += "\n<i>Нет активных заказов.</i>"
         else:
-            for order in active_orders.all():
+            for order in active_orders:
                 kb.row(InlineKeyboardButton(
                     text=f"Заказ #{order.id} ({order.status.name}) - {order.total_price} грн",
-                    callback_data=f"waiter_view_order_{order.id}"
+                    callback_data=f"waiter_manage_order_{order.id}" # Go directly to management
                 ))
         kb.row(InlineKeyboardButton(text="⬅️ К списку столиков", callback_data="back_to_tables_list"))
         
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
+        await callback.answer()
 
- @dp_admin.callback_query(F.data == "back_to_tables_list")
+    @dp_admin.callback_query(F.data == "back_to_tables_list")
     async def back_to_waiter_tables(callback: CallbackQuery, session: AsyncSession):
         await show_waiter_tables(callback, session)
-        
+
+    # This handler is no longer primary, replaced by the manage handler
     @dp_admin.callback_query(F.data.startswith("waiter_view_order_"))
     async def waiter_view_order_details(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
-        order = await session.get(Order, order_id, options=[joinedload(Order.status), joinedload(Order.table)])
-        if not order:
-            return await callback.answer("Замовлення не знайдено!", show_alert=True)
-
-        text = (f"<b>Заказ #{order.id} (Столик: {order.table.name})</b>\n"
-                f"<b>Статус:</b> {order.status.name}\n\n"
-                f"<b>Состав:</b>\n- {html.quote(order.products).replace(', ', '\n- ')}\n\n"
-                f"<b>Сумма:</b> {order.total_price} грн")
+        await manage_in_house_order_handler(callback, session, order_id=order_id)
         
-        statuses = await session.scalars(select(OrderStatus).where(OrderStatus.visible_to_waiter == True).order_by(OrderStatus.id))
-        kb = InlineKeyboardBuilder()
-        status_buttons = [
-            InlineKeyboardButton(text=s.name, callback_data=f"staff_set_status_{order.id}_{s.id}")
-            for s in statuses.all()
-        ]
-        kb.row(*status_buttons)
-        # NEW: Add manage button
-        kb.row(InlineKeyboardButton(text="⚙️ Керувати замовленням", callback_data=f"waiter_manage_order_{order.id}"))
-        kb.row(InlineKeyboardButton(text="⬅️ Назад к столику", callback_data=f"waiter_view_table_{order.table_id}"))
-
-        await callback.message.edit_text(text, reply_markup=kb.as_markup())
-
-
     # NEW: Handler and view generator for full order management by waiter
     async def _generate_waiter_order_view(order: Order, session: AsyncSession):
         """Генерирует текст и клавиатуру для управления заказом официантом."""
@@ -449,9 +439,11 @@ def register_courier_handlers(dp_admin: Dispatcher):
         return text, kb.as_markup()
 
     @dp_admin.callback_query(F.data.startswith("waiter_manage_order_"))
-    async def manage_in_house_order_handler(callback: CallbackQuery, session: AsyncSession):
-        order_id = int(callback.data.split("_")[-1])
-        order = await session.get(Order, order_id, options=[joinedload(Order.table)])
+    async def manage_in_house_order_handler(callback: CallbackQuery, session: AsyncSession, order_id: int = None):
+        if not order_id:
+            order_id = int(callback.data.split("_")[-1])
+
+        order = await session.get(Order, order_id, options=[joinedload(Order.table), joinedload(Order.status)])
         if not order:
             return await callback.answer("Замовлення не знайдено", show_alert=True)
 
@@ -460,8 +452,11 @@ def register_courier_handlers(dp_admin: Dispatcher):
         try:
             await callback.message.edit_text(text, reply_markup=keyboard)
         except TelegramBadRequest as e:
-            logger.warning(f"Could not edit message in manage_in_house_order_handler: {e}. Sending new one.")
-            await callback.message.delete()
-            await callback.message.answer(text, reply_markup=keyboard)
+            if "message is not modified" in str(e):
+                pass # Ignore if the message content is the same
+            else:
+                logger.warning(f"Could not edit message in manage_in_house_order_handler: {e}. Sending new one.")
+                await callback.message.delete()
+                await callback.message.answer(text, reply_markup=keyboard)
 
         await callback.answer()
