@@ -1201,6 +1201,14 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
         <td>
             <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
                 <input type="hidden" name="name" value="{html.escape(s.name)}">
+                <input type="hidden" name="field" value="visible_to_waiter">
+                <input type="hidden" name="value" value="{'false' if s.visible_to_waiter else 'true'}">
+                <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.visible_to_waiter)}</button>
+            </form>
+        </td>
+        <td>
+            <form action="/admin/edit_status/{s.id}" method="post" class="inline-form">
+                <input type="hidden" name="name" value="{html.escape(s.name)}">
                 <input type="hidden" name="field" value="is_completed_status">
                 <input type="hidden" name="value" value="{'false' if s.is_completed_status else 'true'}">
                 <button type="submit" class="button-sm" style="background-color: transparent; color: inherit; padding: 0;">{bool_to_icon(s.is_completed_status)}</button>
@@ -1230,6 +1238,7 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
             <div class="checkbox-group"><input type="checkbox" id="notify_customer" name="notify_customer" value="true" checked><label for="notify_customer">Сповіщати клієнта</label></div>
             <div class="checkbox-group"><input type="checkbox" id="visible_to_operator" name="visible_to_operator" value="true" checked><label for="visible_to_operator">Показувати оператору</label></div>
             <div class="checkbox-group"><input type="checkbox" id="visible_to_courier" name="visible_to_courier" value="true"><label for="visible_to_courier">Показувати кур'єру</label></div>
+            <div class="checkbox-group"><input type="checkbox" id="visible_to_waiter" name="visible_to_waiter" value="true"><label for="visible_to_waiter">Показувати офіціанту</label></div>
             <div class="checkbox-group"><input type="checkbox" id="is_completed_status" name="is_completed_status" value="true"><label for="is_completed_status">Цей статус ЗАВЕРШУЄ замовлення</label></div>
             <div class="checkbox-group"><input type="checkbox" id="is_cancelled_status" name="is_cancelled_status" value="true"><label for="is_cancelled_status">Цей статус СКАСОВУЄ замовлення</label></div>
             <button type="submit">Додати</button>
@@ -1238,8 +1247,8 @@ async def admin_statuses(error: Optional[str] = None, session: AsyncSession = De
     <div class="card">
         <h2>Список статусів</h2>
         <table>
-            <thead><tr><th>ID</th><th>Назва</th><th>Сповіщ.</th><th>Оператору</th><th>Кур'єру</th><th>Завершує</th><th>Скасовує</th><th>Дії</th></tr></thead>
-            <tbody>{rows or "<tr><td colspan='8'>Немає статусів</td></tr>"}</tbody>
+            <thead><tr><th>ID</th><th>Назва</th><th>Сповіщ.</th><th>Оператору</th><th>Кур'єру</th><th>Офіціанту</th><th>Завершує</th><th>Скасовує</th><th>Дії</th></tr></thead>
+            <tbody>{rows or "<tr><td colspan='9'>Немає статусів</td></tr>"}</tbody>
         </table>
     </div>
     """
@@ -1253,6 +1262,7 @@ async def add_status(
     notify_customer: Optional[bool] = Form(False),
     visible_to_operator: Optional[bool] = Form(False),
     visible_to_courier: Optional[bool] = Form(False),
+    visible_to_waiter: Optional[bool] = Form(False),
     is_completed_status: Optional[bool] = Form(False),
     is_cancelled_status: Optional[bool] = Form(False),
     session: AsyncSession = Depends(get_db_session),
@@ -1263,6 +1273,7 @@ async def add_status(
         notify_customer=bool(notify_customer),
         visible_to_operator=bool(visible_to_operator),
         visible_to_courier=bool(visible_to_courier),
+        visible_to_waiter=bool(visible_to_waiter),
         is_completed_status=bool(is_completed_status),
         is_cancelled_status=bool(is_cancelled_status)
     )
@@ -1285,7 +1296,7 @@ async def edit_status(
 
     if name and not field:
         status_to_edit.name = name
-    elif field in ["notify_customer", "visible_to_operator", "visible_to_courier", "is_completed_status", "is_cancelled_status"]:
+    elif field in ["notify_customer", "visible_to_operator", "visible_to_courier", "visible_to_waiter", "is_completed_status", "is_cancelled_status"]:
         setattr(status_to_edit, field, value.lower() == 'true')
 
     await session.commit()
