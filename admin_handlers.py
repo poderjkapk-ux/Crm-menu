@@ -178,10 +178,8 @@ def register_admin_handlers(dp: Dispatcher):
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
         if employee:
             if employee.role.can_manage_orders:
-                # ОНОВЛЕНО: Передаємо об'єкт employee
                 return await message.answer(f"✅ Ви вже авторизовані як оператор.", reply_markup=get_operator_keyboard(employee))
             elif employee.role.can_be_assigned:
-                # ОНОВЛЕНО: Передаємо об'єкт employee
                 return await message.answer("❌ Ви авторизовані як кур'єр. Для входу як оператор, спочатку вийдіть із системи.", reply_markup=get_courier_keyboard(employee))
         await state.set_state(OperatorAuthStates.waiting_for_phone)
         kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_auth")).as_markup()
@@ -362,8 +360,7 @@ def register_admin_handlers(dp: Dispatcher):
 
     @dp.callback_query(F.data.startswith("admin_show_cat_"))
     async def admin_show_category(callback: CallbackQuery, session: AsyncSession):
-        # Отримуємо category_id з колбеку, ігноруючи номер сторінки (оскільки пагінація не реалізована для цього меню)
-        order_id, category_id = map(int, callback.data.split("_")[3:5]) 
+        order_id, category_id = map(int, callback.data.split("_")[3:5])
         products = (await session.execute(select(Product).where(Product.category_id == category_id, Product.is_active == True))).scalars().all()
         kb = InlineKeyboardBuilder()
         for prod in products:
@@ -389,13 +386,15 @@ def register_admin_handlers(dp: Dispatcher):
     @dp.callback_query(F.data.startswith("select_courier_"))
     async def select_courier_start(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[2])
-        courier_role_res = await session.execute(select(Role).where(Role.can_be_assigned == True).limit(1))
-        courier_role = courier_role_res.scalar_one_or_none()
+        # ВИПРАВЛЕНО: Збираємо ID усіх ролей, які можуть бути кур'єрами
+        courier_roles_res = await session.execute(select(Role.id).where(Role.can_be_assigned == True))
+        courier_role_ids = courier_roles_res.scalars().all()
         
-        if not courier_role:
+        if not courier_role_ids:
             return await callback.answer("Помилка: Роль 'Кур'єр' не знайдена в системі.", show_alert=True)
         
-        couriers = (await session.execute(select(Employee).where(Employee.role_id == courier_role.id, Employee.is_on_shift == True).order_by(Employee.full_name))).scalars().all()
+        # Фільтруємо співробітників за усіма знайденими ролями та статусом "на зміні"
+        couriers = (await session.execute(select(Employee).where(Employee.role_id.in_(courier_role_ids), Employee.is_on_shift == True).order_by(Employee.full_name))).scalars().all()
         
         kb = InlineKeyboardBuilder()
         text = f"<b>Замовлення #{order_id}</b>\nВиберіть кур'єра (🟢 На зміні):"
@@ -444,11 +443,17 @@ def register_admin_handlers(dp: Dispatcher):
                     statuses_res = await session.execute(select(OrderStatus).where(OrderStatus.visible_to_courier == True).order_by(OrderStatus.id))
                     statuses = statuses_res.scalars().all()
                     kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
+                    
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
-                        # ВИПРАВЛЕНО: Неправильне посилання на карту
-                        map_query = f"http://googleusercontent.com/maps/google.com/0{encoded_address}"
+                        # ВИПРАВЛЕНО: Посилання на карту
+                        map_query = f"https://maps.google.com/?q={encoded_address}" 
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_query))
+                    
+                    # НОВЕ: Кнопка для дзвінка клієнту
+                    if order.phone_number:
+                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
+                        
                     await callback.bot.send_message(
                         new_courier.telegram_user_id,
                         f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html_module.escape(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
