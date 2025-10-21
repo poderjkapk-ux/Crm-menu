@@ -30,34 +30,48 @@ def get_staff_login_keyboard():
     builder.row(KeyboardButton(text="🤵 Вхід офіціанта"))
     return builder.as_markup(resize_keyboard=True)
 
-def get_courier_keyboard(is_on_shift: bool):
+# НОВА ФУНКЦІЯ: Об'єднує кнопки всіх ролей
+def get_staff_keyboard(employee: Employee):
     builder = ReplyKeyboardBuilder()
-    if is_on_shift:
-        builder.row(KeyboardButton(text="📦 Мої замовлення"))
+    role = employee.role
+    
+    # 1. Кнопка управління зміною
+    if employee.is_on_shift:
         builder.row(KeyboardButton(text="🔴 Завершити зміну"))
     else:
         builder.row(KeyboardButton(text="🟢 Почати зміну"))
+
+    # 2. Рольові кнопки (тільки якщо на зміні)
+    role_buttons = []
+    if employee.is_on_shift:
+        # Кур'єрські кнопки
+        if role.can_be_assigned:
+            role_buttons.append(KeyboardButton(text="📦 Мої замовлення"))
+        # Офіціантські кнопки
+        if role.can_serve_tables:
+            role_buttons.append(KeyboardButton(text="🍽 Мої столики"))
+        # Кнопки оператора (наразі мінімальні)
+        if role.can_manage_orders:
+             pass 
+            
+    if role_buttons:
+        # Розміщуємо всі необхідні кнопки
+        builder.row(*role_buttons)
+
+    # 3. Кнопка виходу
     builder.row(KeyboardButton(text="🚪 Вийти"))
+    
     return builder.as_markup(resize_keyboard=True)
 
-def get_operator_keyboard(is_on_shift: bool):
-    builder = ReplyKeyboardBuilder()
-    if is_on_shift:
-        builder.row(KeyboardButton(text="🔴 Завершити зміну"))
-    else:
-        builder.row(KeyboardButton(text="🟢 Почати зміну"))
-    builder.row(KeyboardButton(text="🚪 Вийти"))
-    return builder.as_markup(resize_keyboard=True)
+# ОНОВЛЕНІ ОБГОРТКИ: Тепер приймають Employee і викликають нову функцію
+def get_courier_keyboard(employee: Employee):
+    return get_staff_keyboard(employee)
 
-def get_waiter_keyboard(is_on_shift: bool):
-    builder = ReplyKeyboardBuilder()
-    if is_on_shift:
-        builder.row(KeyboardButton(text="🍽 Мої столики"))
-        builder.row(KeyboardButton(text="🔴 Завершити зміну"))
-    else:
-        builder.row(KeyboardButton(text="🟢 Почати зміну"))
-    builder.row(KeyboardButton(text="🚪 Вийти"))
-    return builder.as_markup(resize_keyboard=True)
+def get_operator_keyboard(employee: Employee):
+    return get_staff_keyboard(employee)
+
+def get_waiter_keyboard(employee: Employee):
+    return get_staff_keyboard(employee)
 
 
 async def show_courier_orders(message_or_callback: Message | CallbackQuery, session: AsyncSession, **kwargs: Dict[str, Any]):
@@ -149,23 +163,16 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
         await message.answer(text, reply_markup=kb.as_markup())
 
 
+# ОНОВЛЕНО: Використання get_staff_keyboard в start_handler
 async def start_handler(message: Message, state: FSMContext, session: AsyncSession, **kwargs: Dict[str, Any]):
     await state.clear()
     employee = await session.scalar(
         select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
     )
     if employee:
-        if employee.role.can_be_assigned:
-            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим кур'єра.",
-                                 reply_markup=get_courier_keyboard(employee.is_on_shift))
-        elif employee.role.can_manage_orders:
-            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим оператора.",
-                                 reply_markup=get_operator_keyboard(employee.is_on_shift))
-        elif employee.role.can_serve_tables:
-            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим офіціанта.",
-                                 reply_markup=get_waiter_keyboard(employee.is_on_shift))
-        else:
-            await message.answer("Ви авторизовані, але ваша роль не визначена. Зверніться до адміністратора.")
+        keyboard = get_staff_keyboard(employee) # Використовуємо уніфіковану клавіатуру
+        await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим {employee.role.name}.",
+                             reply_markup=keyboard)
     else:
         await message.answer("👋 Ласкаво просимо! Використовуйте цей бот для управління замовленнями.",
                              reply_markup=get_staff_login_keyboard())
@@ -213,12 +220,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
             await session.commit()
             await state.clear()
             
-            keyboard_getters = {
-                "courier": get_courier_keyboard,
-                "operator": get_operator_keyboard,
-                "waiter": get_waiter_keyboard,
-            }
-            keyboard = keyboard_getters[role_type](employee.is_on_shift)
+            keyboard = get_staff_keyboard(employee) # Використовуємо уніфіковану клавіатуру
             
             await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=keyboard)
         else:
@@ -248,13 +250,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
         await session.commit()
         
         action = "почали" if is_start else "завершили"
-        keyboard = get_staff_login_keyboard() 
-        if employee.role.can_be_assigned:
-            keyboard = get_courier_keyboard(employee.is_on_shift)
-        elif employee.role.can_manage_orders:
-            keyboard = get_operator_keyboard(employee.is_on_shift)
-        elif employee.role.can_serve_tables:
-            keyboard = get_waiter_keyboard(employee.is_on_shift)
+        
+        keyboard = get_staff_keyboard(employee) # Використовуємо уніфіковану клавіатуру
         
         await message.answer(f"✅ Ви успішно {action} зміну.", reply_markup=keyboard)
 
