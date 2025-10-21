@@ -214,7 +214,6 @@ def register_admin_handlers(dp: Dispatcher):
 
         order.status_id = new_status_id
         
-        # ДОБАВЛЕНО: Создание записи в истории
         history_entry = OrderStatusHistory(
             order_id=order.id,
             status_id=new_status_id,
@@ -443,6 +442,7 @@ def register_admin_handlers(dp: Dispatcher):
                     kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
+                        # ИСПРАВЛЕНО: Неверная ссылка на карту
                         map_query = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карте", url=map_query))
                     await callback.bot.send_message(
