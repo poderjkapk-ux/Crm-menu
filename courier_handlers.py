@@ -24,38 +24,38 @@ class StaffAuthStates(StatesGroup):
 
 def get_staff_login_keyboard():
     builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text="🔐 Вход оператора"))
-    builder.row(KeyboardButton(text="🚚 Вход курьера"))
-    builder.row(KeyboardButton(text="🤵 Вход официанта"))
+    builder.row(KeyboardButton(text="🔐 Вхід оператора"))
+    builder.row(KeyboardButton(text="🚚 Вхід кур'єра"))
+    builder.row(KeyboardButton(text="🤵 Вхід офіціанта"))
     return builder.as_markup(resize_keyboard=True)
 
 def get_courier_keyboard(is_on_shift: bool):
     builder = ReplyKeyboardBuilder()
     if is_on_shift:
-        builder.row(KeyboardButton(text="📦 Мои заказы"))
-        builder.row(KeyboardButton(text="🔴 Завершить смену"))
+        builder.row(KeyboardButton(text="📦 Мої замовлення"))
+        builder.row(KeyboardButton(text="🔴 Завершити зміну"))
     else:
-        builder.row(KeyboardButton(text="🟢 Начать смену"))
-    builder.row(KeyboardButton(text="🚪 Выйти"))
+        builder.row(KeyboardButton(text="🟢 Почати зміну"))
+    builder.row(KeyboardButton(text="🚪 Вийти"))
     return builder.as_markup(resize_keyboard=True)
 
 def get_operator_keyboard(is_on_shift: bool):
     builder = ReplyKeyboardBuilder()
     if is_on_shift:
-        builder.row(KeyboardButton(text="🔴 Завершить смену"))
+        builder.row(KeyboardButton(text="🔴 Завершити зміну"))
     else:
-        builder.row(KeyboardButton(text="🟢 Начать смену"))
-    builder.row(KeyboardButton(text="🚪 Выйти"))
+        builder.row(KeyboardButton(text="🟢 Почати зміну"))
+    builder.row(KeyboardButton(text="🚪 Вийти"))
     return builder.as_markup(resize_keyboard=True)
 
 def get_waiter_keyboard(is_on_shift: bool):
     builder = ReplyKeyboardBuilder()
     if is_on_shift:
-        builder.row(KeyboardButton(text="🍽 Мои столики"))
-        builder.row(KeyboardButton(text="🔴 Завершить смену"))
+        builder.row(KeyboardButton(text="🍽 Мої столики"))
+        builder.row(KeyboardButton(text="🔴 Завершити зміну"))
     else:
-        builder.row(KeyboardButton(text="🟢 Начать смену"))
-    builder.row(KeyboardButton(text="🚪 Выйти"))
+        builder.row(KeyboardButton(text="🟢 Почати зміну"))
+    builder.row(KeyboardButton(text="🚪 Вийти"))
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -66,7 +66,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
     employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role)))
     
     if not employee or not employee.role.can_be_assigned:
-         return await message.answer("❌ У вас нет прав курьера.")
+         return await message.answer("❌ У вас немає прав кур'єра.")
 
     final_statuses_res = await session.execute(
         select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True))
@@ -81,21 +81,21 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
     )
     orders = orders_res.scalars().all()
 
-    text = "🚚 <b>Ваши активные заказы:</b>\n\n"
+    text = "🚚 <b>Ваші активні замовлення:</b>\n\n"
     if not employee.is_on_shift:
-         text += "🔴 Вы не на смене. Нажмите '🟢 Начать смену', чтобы получать новые заказы.\n\n"
+         text += "🔴 Ви не на зміні. Натисніть '🟢 Почати зміну', щоб отримувати нові замовлення.\n\n"
     if not orders:
-        text += "На данный момент нет активных заказов, назначенных вам."
+        text += "На даний момент немає активних замовлень, призначених вам."
     
     kb = InlineKeyboardBuilder()
     if orders:
         for order in orders:
-            status_name = order.status.name if order.status else "Неизвестный"
-            address_info = order.address if order.is_delivery else 'Самовывоз'
-            text += (f"<b>Заказ #{order.id}</b> ({status_name})\n"
-                     f"📍 Адрес: {html.quote(address_info)}\n"
-                     f"💰 Сумма: {order.total_price} грн\n\n")
-            kb.row(InlineKeyboardButton(text=f"Действия по заказу #{order.id}", callback_data=f"courier_view_order_{order.id}"))
+            status_name = order.status.name if order.status else "Невідомий"
+            address_info = order.address if order.is_delivery else 'Самовивіз'
+            text += (f"<b>Замовлення #{order.id}</b> ({status_name})\n"
+                     f"📍 Адреса: {html.quote(address_info)}\n"
+                     f"💰 Сума: {order.total_price} грн\n\n")
+            kb.row(InlineKeyboardButton(text=f"Дії по замовленню #{order.id}", callback_data=f"courier_view_order_{order.id}"))
         kb.adjust(1)
     
     try:
@@ -106,7 +106,7 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
             await message.answer(text, reply_markup=kb.as_markup())
     except TelegramBadRequest as e:
          if "message is not modified" in str(e):
-             await message_or_callback.answer("Данные не изменились.")
+             await message_or_callback.answer("Дані не змінилися.")
          else:
              logger.error(f"Error in show_courier_orders: {e}")
              await message.answer(text, reply_markup=kb.as_markup())
@@ -119,20 +119,20 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
         select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
     )
     if not employee or not employee.role.can_serve_tables:
-        return await message.answer("❌ У вас нет прав официанта.")
+        return await message.answer("❌ У вас немає прав офіціанта.")
 
     if not employee.is_on_shift:
-        return await message.answer("🔴 Вы не на смене. Начните смену, чтобы увидеть свои столики.")
+        return await message.answer("🔴 Ви не на зміні. Почніть зміну, щоб побачити свої столики.")
 
     tables_res = await session.execute(
         select(Table).where(Table.assigned_waiter_id == employee.id).order_by(Table.name)
     )
     tables = tables_res.scalars().all()
 
-    text = "🍽 <b>Закрепленные за вами столики:</b>\n\n"
+    text = "🍽 <b>Закріплені за вами столики:</b>\n\n"
     kb = InlineKeyboardBuilder()
     if not tables:
-        text += "За вами не закреплено ни одного столика."
+        text += "За вами не закріплено жодного столика."
     else:
         for table in tables:
             kb.add(InlineKeyboardButton(text=f"Столик: {html.escape(table.name)}", callback_data=f"waiter_view_table_{table.id}"))
@@ -155,43 +155,43 @@ async def start_handler(message: Message, state: FSMContext, session: AsyncSessi
     )
     if employee:
         if employee.role.can_be_assigned:
-            await message.answer(f"🎉 Здравствуйте, {employee.full_name}! Вы вошли в режим курьера.",
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим кур'єра.",
                                  reply_markup=get_courier_keyboard(employee.is_on_shift))
         elif employee.role.can_manage_orders:
-            await message.answer(f"🎉 Здравствуйте, {employee.full_name}! Вы вошли в режим оператора.",
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим оператора.",
                                  reply_markup=get_operator_keyboard(employee.is_on_shift))
         elif employee.role.can_serve_tables:
-            await message.answer(f"🎉 Здравствуйте, {employee.full_name}! Вы вошли в режим официанта.",
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви увійшли в режим офіціанта.",
                                  reply_markup=get_waiter_keyboard(employee.is_on_shift))
         else:
-            await message.answer("Вы авторизованы, но ваша роль не определена. Обратитесь к администратору.")
+            await message.answer("Ви авторизовані, але ваша роль не визначена. Зверніться до адміністратора.")
     else:
-        await message.answer("👋 Добро пожаловать! Используйте этот бот для управления заказами.",
+        await message.answer("👋 Ласкаво просимо! Використовуйте цей бот для управління замовленнями.",
                              reply_markup=get_staff_login_keyboard())
 
 
 def register_courier_handlers(dp_admin: Dispatcher):
     dp_admin.message.register(start_handler, CommandStart())
 
-    @dp_admin.message(F.text.in_({"🚚 Вход курьера", "🔐 Вход оператора", "🤵 Вход официанта"}))
+    @dp_admin.message(F.text.in_({"🚚 Вхід кур'єра", "🔐 Вхід оператора", "🤵 Вхід офіціанта"}))
     async def staff_login_start(message: Message, state: FSMContext, session: AsyncSession):
         user_id = message.from_user.id
         employee = await session.scalar(
             select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role))
         )
         if employee:
-            return await message.answer(f"✅ Вы уже авторизованы как {employee.role.name}. Сначала выйдите из системы.", 
+            return await message.answer(f"✅ Ви вже авторизовані як {employee.role.name}. Спочатку вийдіть із системи.", 
                                         reply_markup=get_staff_login_keyboard())
         
         role_type = "unknown"
-        if "курьера" in message.text: role_type = "courier"
+        if "кур'єра" in message.text: role_type = "courier"
         elif "оператора" in message.text: role_type = "operator"
-        elif "официанта" in message.text: role_type = "waiter"
+        elif "офіціанта" in message.text: role_type = "waiter"
             
         await state.set_state(StaffAuthStates.waiting_for_phone)
         await state.update_data(role_type=role_type)
-        kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_auth")).as_markup()
-        await message.answer(f"Пожалуйста, введите номер телефона для роли **{role_type}**:", reply_markup=kb)
+        kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_auth")).as_markup()
+        await message.answer(f"Будь ласка, введіть номер телефону для ролі **{role_type}**:", reply_markup=kb)
 
     @dp_admin.message(StaffAuthStates.waiting_for_phone)
     async def process_staff_phone(message: Message, state: FSMContext, session: AsyncSession):
@@ -219,20 +219,20 @@ def register_courier_handlers(dp_admin: Dispatcher):
             }
             keyboard = keyboard_getters[role_type](employee.is_on_shift)
             
-            await message.answer(f"🎉 Здравствуйте, {employee.full_name}! Вы успешно авторизованы как {employee.role.name}.", reply_markup=keyboard)
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=keyboard)
         else:
-            await message.answer(f"❌ Сотрудник с таким номером не найден или не имеет прав для роли '{role_type}'. Попробуйте еще раз.")
+            await message.answer(f"❌ Співробітника з таким номером не знайдено або він не має прав для ролі '{role_type}'. Спробуйте ще раз.")
 
     @dp_admin.callback_query(F.data == "cancel_auth")
     async def cancel_auth(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         try:
-             await callback.message.edit_text("Авторизация отменена.")
+             await callback.message.edit_text("Авторизацію скасовано.")
         except Exception:
              await callback.message.delete()
-             await callback.message.answer("Авторизация отменена.", reply_markup=get_staff_login_keyboard())
+             await callback.message.answer("Авторизацію скасовано.", reply_markup=get_staff_login_keyboard())
     
-    @dp_admin.message(F.text.in_({"🟢 Начать смену", "🔴 Завершить смену"}))
+    @dp_admin.message(F.text.in_({"🟢 Почати зміну", "🔴 Завершити зміну"}))
     async def toggle_shift(message: Message, session: AsyncSession):
         employee = await session.scalar(
             select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
@@ -240,13 +240,13 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if not employee: return
         is_start = message.text.startswith("🟢")
         if employee.is_on_shift == is_start:
-            await message.answer(f"Ваш статус уже {'на смене' if is_start else 'не на смене'}.")
+            await message.answer(f"Ваш статус вже {'на зміні' if is_start else 'не на зміні'}.")
             return
 
         employee.is_on_shift = is_start
         await session.commit()
         
-        action = "начали" if is_start else "завершили"
+        action = "почали" if is_start else "завершили"
         keyboard = get_staff_login_keyboard() 
         if employee.role.can_be_assigned:
             keyboard = get_courier_keyboard(employee.is_on_shift)
@@ -255,10 +255,10 @@ def register_courier_handlers(dp_admin: Dispatcher):
         elif employee.role.can_serve_tables:
             keyboard = get_waiter_keyboard(employee.is_on_shift)
         
-        await message.answer(f"✅ Вы успешно {action} смену.", reply_markup=keyboard)
+        await message.answer(f"✅ Ви успішно {action} зміну.", reply_markup=keyboard)
 
 
-    @dp_admin.message(F.text == "🚪 Выйти")
+    @dp_admin.message(F.text == "🚪 Вийти")
     async def logout_handler(message: Message, session: AsyncSession):
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
         if employee:
@@ -272,40 +272,40 @@ def register_courier_handlers(dp_admin: Dispatcher):
                     table.assigned_waiter_id = None
 
             await session.commit()
-            await message.answer("👋 Вы вышли из системы.", reply_markup=get_staff_login_keyboard())
+            await message.answer("👋 Ви вийшли з системи.", reply_markup=get_staff_login_keyboard())
         else:
-            await message.answer("❌ Вы не авторизованы.")
+            await message.answer("❌ Ви не авторизовані.")
 
-    @dp_admin.message(F.text.in_({"📦 Мои заказы", "🍽 Мои столики"}))
+    @dp_admin.message(F.text.in_({"📦 Мої замовлення", "🍽 Мої столики"}))
     async def handle_show_items_by_role(message: Message, session: AsyncSession, **kwargs: Dict[str, Any]):
         employee = await session.scalar(
             select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
         )
         if not employee:
-            return await message.answer("❌ Вы не авторизованы.")
+            return await message.answer("❌ Ви не авторизовані.")
 
-        if message.text == "📦 Мои заказы" and employee.role.can_be_assigned:
+        if message.text == "📦 Мої замовлення" and employee.role.can_be_assigned:
             await show_courier_orders(message, session)
-        elif message.text == "🍽 Мои столики" and employee.role.can_serve_tables:
+        elif message.text == "🍽 Мої столики" and employee.role.can_serve_tables:
             await show_waiter_tables(message, session)
         else:
-            await message.answer("❌ Ваша роль не позволяет просматривать эти данные.")
+            await message.answer("❌ Ваша роль не дозволяє переглядати ці дані.")
 
     @dp_admin.callback_query(F.data.startswith("courier_view_order_"))
     async def courier_view_order_details(callback: CallbackQuery, session: AsyncSession, **kwargs: Dict[str, Any]):
         order_id = int(callback.data.split("_")[3])
         order = await session.get(Order, order_id)
-        if not order: return await callback.answer("Заказ не найден.")
+        if not order: return await callback.answer("Замовлення не знайдено.")
 
-        status_name = order.status.name if order.status else 'Неизвестный'
-        address_info = order.address if order.is_delivery else 'Самовывоз'
-        text = (f"<b>Детали заказа #{order.id}</b>\n\n"
+        status_name = order.status.name if order.status else 'Невідомий'
+        address_info = order.address if order.is_delivery else 'Самовивіз'
+        text = (f"<b>Деталі замовлення #{order.id}</b>\n\n"
                 f"Статус: {status_name}\n"
-                f"Адрес: {html.quote(address_info)}\n"
-                f"Клиент: {html.quote(order.customer_name)}\n"
+                f"Адреса: {html.quote(address_info)}\n"
+                f"Клієнт: {html.quote(order.customer_name)}\n"
                 f"Телефон: {html.quote(order.phone_number)}\n"
-                f"Состав: {html.quote(order.products)}\n"
-                f"Сумма: {order.total_price} грн\n\n")
+                f"Склад: {html.quote(order.products)}\n"
+                f"Сума: {order.total_price} грн\n\n")
         
         kb = InlineKeyboardBuilder()
         statuses_res = await session.execute(
@@ -322,9 +322,9 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
             map_query = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
-            kb.row(InlineKeyboardButton(text="🗺️ Показать на карте", url=map_query))
+            kb.row(InlineKeyboardButton(text="🗺️ Показати на карті", url=map_query))
 
-        kb.row(InlineKeyboardButton(text="⬅️ К моим заказам", callback_data="show_courier_orders_list"))
+        kb.row(InlineKeyboardButton(text="⬅️ До моїх замовлень", callback_data="show_courier_orders_list"))
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
         await callback.answer()
 
@@ -336,19 +336,19 @@ def register_courier_handlers(dp_admin: Dispatcher):
     async def staff_set_status(callback: CallbackQuery, session: AsyncSession, **kwargs: Dict[str, Any]):
         client_bot = dp_admin.get("client_bot")
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == callback.from_user.id).options(joinedload(Employee.role)))
-        actor_info = f"{employee.role.name}: {employee.full_name}" if employee else f"Сотрудник (ID: {callback.from_user.id})"
+        actor_info = f"{employee.role.name}: {employee.full_name}" if employee else f"Співробітник (ID: {callback.from_user.id})"
         
         order_id, new_status_id = map(int, callback.data.split("_")[3:])
         
         order = await session.get(Order, order_id, options=[joinedload(Order.table)])
-        if not order: return await callback.answer("Заказ не найден.")
+        if not order: return await callback.answer("Замовлення не знайдено.")
         
         new_status = await session.get(OrderStatus, new_status_id)
-        if not new_status: return await callback.answer(f"Ошибка: Статус не найден.")
+        if not new_status: return await callback.answer(f"Помилка: Статус не знайдено.")
 
-        old_status_name = order.status.name if order.status else 'Неизвестный'
+        old_status_name = order.status.name if order.status else 'Невідомий'
         order.status_id = new_status.id
-        alert_text = f"Статус изменен: {new_status.name}"
+        alert_text = f"Статус змінено: {new_status.name}"
 
         if new_status.is_completed_status or new_status.is_cancelled_status:
             if employee and employee.current_order_id == order_id:
@@ -371,13 +371,13 @@ def register_courier_handlers(dp_admin: Dispatcher):
         else:
             await show_courier_orders(callback, session)
             
-    # --- НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ОФИЦИАНТА ---
+    # --- НОВІ ОБРОБНИКИ ДЛЯ ОФІЦІАНТА ---
     @dp_admin.callback_query(F.data.startswith("waiter_view_table_"))
     async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession):
         table_id = int(callback.data.split("_")[-1])
         table = await session.get(Table, table_id)
         if not table:
-            return await callback.answer("Столик не найден!", show_alert=True)
+            return await callback.answer("Столик не знайдено!", show_alert=True)
 
         final_statuses_res = await session.execute(select(OrderStatus.id).where(or_(OrderStatus.is_completed_status == True, OrderStatus.is_cancelled_status == True)))
         final_statuses = final_statuses_res.scalars().all()
@@ -385,17 +385,17 @@ def register_courier_handlers(dp_admin: Dispatcher):
         active_orders_res = await session.execute(select(Order).where(Order.table_id == table_id, Order.status_id.not_in(final_statuses)).options(joinedload(Order.status)))
         active_orders = active_orders_res.scalars().all()
 
-        text = f"<b>Столик: {html.escape(table.name)}</b>\n\nАктивные заказы:\n"
+        text = f"<b>Столик: {html.escape(table.name)}</b>\n\nАктивні замовлення:\n"
         kb = InlineKeyboardBuilder()
         if not active_orders:
-            text += "\n<i>Нет активных заказов.</i>"
+            text += "\n<i>Немає активних замовлень.</i>"
         else:
             for order in active_orders:
                 kb.row(InlineKeyboardButton(
-                    text=f"Заказ #{order.id} ({order.status.name}) - {order.total_price} грн",
+                    text=f"Замовлення #{order.id} ({order.status.name}) - {order.total_price} грн",
                     callback_data=f"waiter_manage_order_{order.id}" # Go directly to management
                 ))
-        kb.row(InlineKeyboardButton(text="⬅️ К списку столиков", callback_data="back_to_tables_list"))
+        kb.row(InlineKeyboardButton(text="⬅️ До списку столиків", callback_data="back_to_tables_list"))
         
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
         await callback.answer()
@@ -412,7 +412,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
     # NEW: Handler and view generator for full order management by waiter
     async def _generate_waiter_order_view(order: Order, session: AsyncSession):
-        """Генерирует текст и клавиатуру для управления заказом официантом."""
+        """Генерує текст і клавіатуру для управління замовленням офіціантом."""
         await session.refresh(order, ['status'])
         status_name = order.status.name if order.status else 'Невідомий'
         products_formatted = "- " + html.quote(order.products or '').replace(", ", "\n- ")
