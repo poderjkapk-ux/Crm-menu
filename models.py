@@ -40,7 +40,6 @@ class Role(Base):
     name: Mapped[str] = mapped_column(sa.String(50), nullable=False, unique=True)
     can_manage_orders: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     can_be_assigned: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может быть назначен на заказ (курьер)")
-    # НОВОЕ ПОЛЕ
     can_serve_tables: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может обслуживать столики (официант)")
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="role")
 
@@ -55,7 +54,6 @@ class Employee(Base):
     is_on_shift: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     current_order_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('orders.id', ondelete="SET NULL"), nullable=True)
     current_order: Mapped[Optional["Order"]] = relationship("Order", foreign_keys="Employee.current_order_id")
-    # Связь с назначенными столиками
     assigned_tables: Mapped[List["Table"]] = relationship("Table", back_populates="assigned_waiter")
 
 
@@ -64,6 +62,10 @@ class Category(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(sa.String(100))
     sort_order: Mapped[int] = mapped_column(sa.Integer, default=100, server_default=text("100"))
+    # НОВІ ПОЛЯ: Керування видимістю
+    show_on_delivery_site: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
+    show_in_restaurant: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
+    
     products: Mapped[list["Product"]] = relationship("Product", back_populates="category")
 
 class Product(Base):
@@ -114,13 +116,11 @@ class Order(Base):
     completed_by_courier: Mapped[Optional["Employee"]] = relationship("Employee", foreign_keys="Order.completed_by_courier_id")
     history: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan", lazy='selectin')
     
-    # НОВЫЕ ПОЛЯ
     table_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('tables.id'), nullable=True)
     table: Mapped[Optional["Table"]] = relationship("Table", back_populates="orders")
     order_type: Mapped[str] = mapped_column(sa.String(20), default='delivery', server_default='delivery', nullable=False) # "delivery", "pickup", "in_house"
 
 
-# НОВАЯ ТАБЛИЦА ДЛЯ ИСТОРИИ СТАТУСОВ
 class OrderStatusHistory(Base):
     __tablename__ = 'order_status_history'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -148,7 +148,6 @@ class CartItem(Base):
     quantity: Mapped[int] = mapped_column(default=1)
     product: Mapped["Product"] = relationship("Product", back_populates="cart_items", lazy='selectin')
 
-# НОВАЯ ТАБЛИЦА
 class Table(Base):
     __tablename__ = 'tables'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -195,7 +194,6 @@ async def create_db_tables():
             session.add(Role(name="Администратор", can_manage_orders=True, can_be_assigned=False, can_serve_tables=True))
             session.add(Role(name="Оператор", can_manage_orders=True, can_be_assigned=False, can_serve_tables=True))
             session.add(Role(name="Курьер", can_manage_orders=False, can_be_assigned=True, can_serve_tables=False))
-            # НОВАЯ РОЛЬ
             session.add(Role(name="Официант", can_manage_orders=False, can_be_assigned=False, can_serve_tables=True))
 
         await session.commit()
