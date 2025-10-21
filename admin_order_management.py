@@ -10,6 +10,7 @@ from urllib.parse import quote_plus
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardButton
 import re # <--- ДОДАНО
 
+
 from models import Order, OrderStatus, Employee, Role, OrderStatusHistory, Settings
 from templates import ADMIN_HTML_TEMPLATE, ADMIN_ORDER_MANAGE_BODY
 from dependencies import get_db_session, check_credentials
@@ -190,14 +191,12 @@ async def web_assign_courier(
                         map_url = f"https://maps.google.com/?q={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
                         
-                    # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
-                    if order.phone_number:
-                        clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
-                        kb_courier.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
+                    # ВИДАЛЕНО: Кнопка "Зателефонувати клієнту" за запитом користувача.
                     
                     await admin_bot.send_message(
                         new_courier.telegram_user_id,
-                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.escape(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
+                        # ОНОВЛЕНО: Додано номер телефону в текст повідомлення
+                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.escape(order.address or 'Самовивіз')}\nТелефон: {html.escape(order.phone_number)}\nСума: {order.total_price} грн.",
                         reply_markup=kb_courier.as_markup()
                     )
                 except Exception as e:
