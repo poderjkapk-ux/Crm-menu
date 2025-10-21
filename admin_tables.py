@@ -28,15 +28,15 @@ async def admin_tables_list(
     )
     tables = tables_res.scalars().all()
     
-    # Отримати всіх офіціантів на зміні
-    waiter_role_res = await session.execute(select(Role).where(Role.can_serve_tables == True).limit(1))
-    waiter_role = waiter_role_res.scalar_one_or_none()
+    # ВИПРАВЛЕНО: Отримуємо ID всіх ролей, які можуть обслуговувати столики
+    waiter_roles_res = await session.execute(select(Role.id).where(Role.can_serve_tables == True))
+    waiter_role_ids = waiter_roles_res.scalars().all()
     
     waiters_on_shift = []
-    if waiter_role:
+    if waiter_role_ids:
         waiters_res = await session.execute(
             select(Employee).where(
-                Employee.role_id == waiter_role.id,
+                Employee.role_id.in_(waiter_role_ids),
                 Employee.is_on_shift == True
             ).order_by(Employee.full_name)
         )
@@ -47,7 +47,6 @@ async def admin_tables_list(
     rows = []
     for table in tables:
         waiter_name = table.assigned_waiter.full_name if table.assigned_waiter else "<i>Не призначено</i>"
-        # JSON-рядок офіціантів передається в onclick для модального вікна
         rows.append(f"""
         <tr>
             <td>{table.id}</td>
@@ -63,7 +62,6 @@ async def admin_tables_list(
 
     body = ADMIN_TABLES_BODY.format(rows="".join(rows) or "<tr><td colspan='5'>Столиків ще не додано.</td></tr>")
     
-    # Додаємо активний клас для меню
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["tables_active"] = "active"
     
@@ -109,9 +107,10 @@ async def assign_waiter_to_table(
     if waiter_id == 0:
         table.assigned_waiter_id = None
     else:
-        waiter = await session.get(Employee, waiter_id)
+        # ВИПРАВЛЕНО: Додано joinedload для оптимізації запиту
+        waiter = await session.get(Employee, waiter_id, options=[joinedload(Employee.role)])
         if not waiter or not waiter.role.can_serve_tables:
-            raise HTTPException(status_code=400, detail="Співробітник не є офіціантом")
+            raise HTTPException(status_code=400, detail="Співробітник не є офіціантом або не знайдений")
         table.assigned_waiter_id = waiter_id
         
     await session.commit()
@@ -121,7 +120,6 @@ async def assign_waiter_to_table(
 @router.get("/qr/{table_id}")
 async def get_qr_code(request: Request, table_id: int):
     """Генерує та повертає QR-код для столика."""
-    # Формуємо повний URL на основі запиту
     base_url = str(request.base_url)
     url = f"{base_url}menu/table/{table_id}"
     
