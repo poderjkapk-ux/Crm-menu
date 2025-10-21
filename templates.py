@@ -1,6 +1,6 @@
 # templates.py
 
-# Замените старую переменную ADMIN_HTML_TEMPLATE на эту:
+# Замініть стару змінну ADMIN_HTML_TEMPLATE на цю:
 ADMIN_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -328,7 +328,7 @@ ADMIN_HTML_TEMPLATE = """
 </html>
 """
 
-# НОВЫЙ ШАБЛОН ДЛЯ СТРАНИЦЫ "СТОЛИКИ"
+# НОВИЙ ШАБЛОН ДЛЯ СТОРІНКИ "СТОЛИКИ"
 ADMIN_TABLES_BODY = """
 <style>
     .qr-code-img {{
@@ -417,8 +417,8 @@ window.onclick = function(event) {{
 </script>
 """
 
-# ... (остальной код в файле templates.py остается без изменений) ...
-# ИСПРАВЛЕННЫЙ ШАБЛОН ДЛЯ ФОРМЫ ЗАКАЗА
+# ... (решта коду у файлі templates.py залишається без змін) ...
+# ВИПРАВЛЕНИЙ ШАБЛОН ДЛЯ ФОРМИ ЗАМОВЛЕННЯ
 ADMIN_ORDER_FORM_BODY = """
 <style>
     .form-grid {{
@@ -642,11 +642,11 @@ document.addEventListener('DOMContentLoaded', () => {
         productSearchInput.value = '';
     };
 
-    // ИСПРАВЛЕНО: Функция инициализации теперь принимает данные как аргумент
+    // ВИПРАВЛЕНО: Функція ініціалізації тепер приймає дані як аргумент
     window.initializeForm = (data) => {
         if (!data) {
             console.error("Initial order data is not provided!");
-            // Установка значений по умолчанию для новой формы
+            // Установка значень за замовчуванням для нової форми
             orderForm.action = '/api/admin/order/new';
             orderForm.querySelector('button[type="submit"]').textContent = 'Створити замовлення';
             orderItems = {};
@@ -753,7 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial Call for new order page (if no data is injected)
     if (typeof window.initializeForm === 'function' && !window.initializeForm.invoked) {
-        // Проверяем, была ли уже вызвана функция, чтобы избежать двойной инициализации
+        // Перевіряємо, чи була вже викликана функція, щоб уникнути подвійної ініціалізації
         const newOrderData = {
              items: {},
              action: '/api/admin/order/new',
@@ -1874,7 +1874,7 @@ ADMIN_ORDER_MANAGE_BODY = """
 """
 
 
-# НОВЫЕ ШАБЛОНЫ ДЛЯ РАЗДЕЛА "КЛИЕНТЫ"
+# НОВІ ШАБЛОНИ ДЛЯ РОЗДІЛУ "КЛІЄНТИ"
 
 ADMIN_CLIENTS_LIST_BODY = """
 <div class="card">
@@ -2025,7 +2025,7 @@ ADMIN_CLIENT_DETAIL_BODY = """
 
 # ... (весь ваш існуючий код до цього моменту) ...
 
-# ОНОВЛЕННИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
+# ОНОВЛЕНИЙ ШАБЛОН ДЛЯ МЕНЮ В РЕСТОРАНІ (ПО QR-КОДУ)
 # templates.py
 
 # ... (весь ваш існуючий код до IN_HOUSE_MENU_HTML_TEMPLATE) ...
