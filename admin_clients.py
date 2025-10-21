@@ -20,11 +20,11 @@ async def admin_clients_list(
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
-    """Displays a paginated and searchable list of clients."""
+    """Відображає сторінку клієнтів з можливістю пошуку та пагінації."""
     per_page = 20
     offset = (page - 1) * per_page
 
-    # Subquery to get the latest customer name for each phone number
+    # Підзапит для отримання останнього імені клієнта для кожного номера телефону
     latest_name_subquery = (
         select(
             Order.phone_number,
@@ -38,7 +38,7 @@ async def admin_clients_list(
         .subquery()
     )
 
-    # Main query to aggregate client data
+    # Основний запит для агрегації даних про клієнтів
     client_query = (
         select(
             Order.phone_number,
@@ -74,7 +74,7 @@ async def admin_clients_list(
         <td>{c['order_count']}</td>
         <td>{c['total_spent']} грн</td>
         <td class="actions">
-            <a href="/admin/client/{c['phone_number']}" class="button-sm">Смотреть</a>
+            <a href="/admin/client/{c['phone_number']}" class="button-sm">Дивитись</a>
         </td>
     </tr>""" for c in clients])
 
@@ -82,7 +82,7 @@ async def admin_clients_list(
 
     body = ADMIN_CLIENTS_LIST_BODY.format(
         search_query=q or '',
-        rows=rows or "<tr><td colspan='5'>Клиентов не найдено</td></tr>",
+        rows=rows or "<tr><td colspan='5'>Клієнтів не знайдено</td></tr>",
         pagination=pagination if pages > 1 else ""
     )
     
@@ -90,7 +90,7 @@ async def admin_clients_list(
     active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
     active_classes["clients_active"] = "active"
 
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Клиенты", body=body, **active_classes))
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Клієнти", body=body, **active_classes))
 
 
 @router.get("/admin/client/{phone_number}", response_class=HTMLResponse)
@@ -99,7 +99,7 @@ async def admin_client_detail(
     session: AsyncSession = Depends(get_db_session),
     username: str = Depends(check_credentials)
 ):
-    """Displays a detailed view of a single client and their order history."""
+    """Відображає детальну інформацію про клієнта та його історію замовлень."""
     orders_res = await session.execute(
         select(Order)
         .where(Order.phone_number == phone_number)
@@ -114,20 +114,20 @@ async def admin_client_detail(
     orders = orders_res.unique().scalars().all()
 
     if not orders:
-        raise HTTPException(status_code=404, detail="Клиент с таким номером не найден")
+        raise HTTPException(status_code=404, detail="Клієнта з таким номером не знайдено")
 
-    # Client details from the most recent order
+    # Деталі клієнта з останнього замовлення
     latest_order = orders[0]
     client_name = latest_order.customer_name
     client_address = latest_order.address
 
-    # Summary stats
+    # Загальна статистика
     total_orders = len(orders)
     total_spent = sum(o.total_price for o in orders)
 
     order_rows = []
     for o in orders:
-        completed_by = o.completed_by_courier.full_name if o.completed_by_courier else "<i>Не завершено курьером</i>"
+        completed_by = o.completed_by_courier.full_name if o.completed_by_courier else "<i>Не завершено кур'єром</i>"
         
         history_log = "<ul class='status-history'>"
         for h in sorted(o.history, key=lambda x: x.timestamp):
@@ -147,10 +147,10 @@ async def admin_client_detail(
         <tr class="order-details-row">
             <td colspan="6">
                 <div class="details-content">
-                    <h4>Детали Заказа:</h4>
-                    <p><b>Состав:</b> {html.escape(o.products)}</p>
-                    <p><b>Адрес:</b> {html.escape(o.address or 'Самовывоз')}</p>
-                    <h4>История Статусов:</h4>
+                    <h4>Деталі Замовлення:</h4>
+                    <p><b>Склад:</b> {html.escape(o.products)}</p>
+                    <p><b>Адреса:</b> {html.escape(o.address or 'Самовивіз')}</p>
+                    <h4>Історія Статусів:</h4>
                     {history_log}
                 </div>
             </td>
@@ -160,7 +160,7 @@ async def admin_client_detail(
     body = ADMIN_CLIENT_DETAIL_BODY.format(
         client_name=html.escape(client_name),
         phone_number=html.escape(phone_number),
-        address=html.escape(client_address or "Не указан"),
+        address=html.escape(client_address or "Не вказана"),
         total_orders=total_orders,
         total_spent=total_spent,
         order_rows="".join(order_rows)
@@ -170,4 +170,4 @@ async def admin_client_detail(
     active_classes = {key: "" for key in ["main_active", "products_active", "categories_active", "orders_active", "statuses_active", "employees_active", "settings_active", "reports_active", "menu_active", "tables_active"]}
     active_classes["clients_active"] = "active"
 
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Клиент: {html.escape(client_name)}", body=body, **active_classes))
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Клієнт: {html.escape(client_name)}", body=body, **active_classes))
