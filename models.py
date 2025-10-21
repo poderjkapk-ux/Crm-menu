@@ -88,7 +88,7 @@ class OrderStatus(Base):
     notify_customer: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
     visible_to_operator: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
     visible_to_courier: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    # НОВЕ ПОЛЕ
+    # НОВОЕ ПОЛЕ
     visible_to_waiter: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     is_completed_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     is_cancelled_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
