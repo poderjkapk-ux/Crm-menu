@@ -23,6 +23,14 @@ async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit
 class Base(DeclarativeBase):
     pass
 
+# --- НОВА ТАБЛИЦЯ ЗВ'ЯЗКУ МІЖ СТОЛИКАМИ ТА ОФІЦІЯНТАМИ ---
+table_waiter_association = sa.Table(
+    'table_waiter_association',
+    Base.metadata,
+    sa.Column('table_id', sa.Integer, sa.ForeignKey('tables.id', ondelete="CASCADE"), primary_key=True),
+    sa.Column('employee_id', sa.Integer, sa.ForeignKey('employees.id', ondelete="CASCADE"), primary_key=True)
+)
+
 # Модель для хранения пунктов меню (страниц)
 class MenuItem(Base):
     __tablename__ = 'menu_items'
@@ -40,7 +48,6 @@ class Role(Base):
     name: Mapped[str] = mapped_column(sa.String(50), nullable=False, unique=True)
     can_manage_orders: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     can_be_assigned: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может быть назначен на заказ (курьер)")
-    # НОВОЕ ПОЛЕ
     can_serve_tables: Mapped[bool] = mapped_column(sa.Boolean, default=False, comment="Может обслуживать столики (официант)")
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="role")
 
@@ -55,9 +62,12 @@ class Employee(Base):
     is_on_shift: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     current_order_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('orders.id', ondelete="SET NULL"), nullable=True)
     current_order: Mapped[Optional["Order"]] = relationship("Order", foreign_keys="Employee.current_order_id")
-    # Связь с назначенными столиками
-    assigned_tables: Mapped[List["Table"]] = relationship("Table", back_populates="assigned_waiter")
-
+    # --- ЗМІНЕНО: Зв'язок зі столиками (багато-до-багатьох) ---
+    assigned_tables: Mapped[List["Table"]] = relationship(
+        "Table",
+        secondary=table_waiter_association,
+        back_populates="assigned_waiters"
+    )
 
 class Category(Base):
     __tablename__ = 'categories'
@@ -88,7 +98,7 @@ class OrderStatus(Base):
     notify_customer: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
     visible_to_operator: Mapped[bool] = mapped_column(sa.Boolean, default=True, server_default=text("1"), nullable=False)
     visible_to_courier: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
-    # НОВЕ ПОЛЕ
+    # --- НОВЕ ПОЛЕ: Видимість статусу для офіціанта ---
     visible_to_waiter: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     is_completed_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     is_cancelled_status: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
@@ -123,7 +133,6 @@ class Order(Base):
     order_type: Mapped[str] = mapped_column(sa.String(20), default='delivery', server_default='delivery', nullable=False) # "delivery", "pickup", "in_house"
 
 
-# НОВАЯ ТАБЛИЦА ДЛЯ ИСТОРИИ СТАТУСОВ
 class OrderStatusHistory(Base):
     __tablename__ = 'order_status_history'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -134,7 +143,6 @@ class OrderStatusHistory(Base):
 
     order: Mapped["Order"] = relationship("Order", back_populates="history")
     status: Mapped["OrderStatus"] = relationship("OrderStatus", back_populates="history_entries", lazy='selectin')
-
 
 class Customer(Base):
     __tablename__ = 'customers'
@@ -151,17 +159,19 @@ class CartItem(Base):
     quantity: Mapped[int] = mapped_column(default=1)
     product: Mapped["Product"] = relationship("Product", back_populates="cart_items", lazy='selectin')
 
-# НОВАЯ ТАБЛИЦА
 class Table(Base):
     __tablename__ = 'tables'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True)
     qr_code_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    assigned_waiter_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id', ondelete="SET NULL"), nullable=True)
     
-    assigned_waiter: Mapped[Optional["Employee"]] = relationship("Employee", back_populates="assigned_tables")
+    # --- ЗМІНЕНО: Зв'язок з офіціантами (багато-до-багатьох) ---
+    assigned_waiters: Mapped[List["Employee"]] = relationship(
+        "Employee",
+        secondary=table_waiter_association,
+        back_populates="assigned_tables"
+    )
     orders: Mapped[List["Order"]] = relationship("Order", back_populates="table")
-
 
 class Settings(Base):
     __tablename__ = 'settings'
@@ -184,12 +194,12 @@ async def create_db_tables():
         result_status = await session.execute(sa.select(OrderStatus).limit(1))
         if not result_status.scalars().first():
             default_statuses = {
-                "Новый": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
-                "В обработке": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
-                "Готов": {"visible_to_operator": True, "visible_to_courier": True, "visible_to_waiter": True},
-                "Доставлен": {"visible_to_operator": True, "visible_to_courier": True, "is_completed_status": True},
-                "Отменен": {"visible_to_operator": True, "visible_to_courier": False, "is_cancelled_status": True, "visible_to_waiter": True},
-                # НОВИЙ СТАТУС
+                "Новий": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
+                "В обробці": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
+                "Готується": {"visible_to_operator": True, "visible_to_courier": False, "visible_to_waiter": True},
+                "Готовий": {"visible_to_operator": True, "visible_to_courier": True, "visible_to_waiter": True},
+                "Доставлений": {"visible_to_operator": True, "visible_to_courier": True, "is_completed_status": True},
+                "Скасовано": {"visible_to_operator": True, "visible_to_courier": False, "is_cancelled_status": True, "visible_to_waiter": True},
                 "Оплачено": {"visible_to_operator": True, "is_completed_status": True, "visible_to_waiter": True, "notify_customer": False}
             }
             for name, props in default_statuses.items():
@@ -197,9 +207,9 @@ async def create_db_tables():
 
         result_roles = await session.execute(sa.select(Role).limit(1))
         if not result_roles.scalars().first():
-            session.add(Role(name="Администратор", can_manage_orders=True, can_be_assigned=True, can_serve_tables=True))
+            session.add(Role(name="Адміністратор", can_manage_orders=True, can_be_assigned=True, can_serve_tables=True))
             session.add(Role(name="Оператор", can_manage_orders=True, can_be_assigned=False, can_serve_tables=True))
-            session.add(Role(name="Курьер", can_manage_orders=False, can_be_assigned=True, can_serve_tables=False))
-            session.add(Role(name="Официант", can_manage_orders=False, can_be_assigned=False, can_serve_tables=True))
+            session.add(Role(name="Кур'єр", can_manage_orders=False, can_be_assigned=True, can_serve_tables=False))
+            session.add(Role(name="Офіціант", can_manage_orders=False, can_be_assigned=False, can_serve_tables=True))
 
         await session.commit()
