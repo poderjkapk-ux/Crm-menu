@@ -1,6 +1,6 @@
 # templates.py
 
-# Замініть стару змінну ADMIN_HTML_TEMPLATE на цю:
+# ... (остальной код до ADMIN_TABLES_BODY без изменений) ...
 ADMIN_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="uk">
@@ -8,7 +8,7 @@ ADMIN_HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title} - Адмін-панель DAYBERG</title>
-    
+
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
@@ -18,7 +18,7 @@ ADMIN_HTML_TEMPLATE = """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
+
     <style>
         :root {{
             --primary-color: #2563eb;
@@ -56,7 +56,7 @@ ADMIN_HTML_TEMPLATE = """
             --card-bg-light: var(--card-bg-dark);
             --border-light: var(--border-dark);
         }}
-        
+
         /* --- Sidebar Styles --- */
         .sidebar {{
             width: 260px;
@@ -175,7 +175,7 @@ ADMIN_HTML_TEMPLATE = """
         .button.secondary {{ background-color: #6b7280; }}
         .button.secondary:hover {{ background-color: #4b5563; }}
         .button-sm {{
-            display: inline-block; padding: 0.4rem 0.6rem; 
+            display: inline-block; padding: 0.4rem 0.6rem;
             border-radius: 0.3rem; text-decoration: none; color: white !important;
             background-color: #6b7280;
         }}
@@ -212,12 +212,12 @@ ADMIN_HTML_TEMPLATE = """
         .pagination {{ margin-top: 1rem; display: flex; gap: 5px; }}
         .pagination a {{ padding: 5px 10px; border: 1px solid var(--border-light); text-decoration: none; color: var(--text-color-light); border-radius: 5px; }}
         .pagination a.active {{ background-color: var(--primary-color); color: white; border-color: var(--primary-color);}}
-        
+
         .nav-tabs {{ display: flex; gap: 10px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 5px; }}
         .nav-tabs a {{ padding: 8px 15px; border-radius: 5px 5px 0 0; text-decoration: none; color: #6b7280; transition: color 0.2s; }}
         .nav-tabs a:hover {{ color: var(--primary-color); }}
         .nav-tabs a.active {{ background-color: var(--primary-color); color: white !important; }}
-        
+
         /* --- Modal Styles --- */
         .modal-overlay {{
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -227,13 +227,24 @@ ADMIN_HTML_TEMPLATE = """
         .modal-overlay.active {{ display: flex; }}
         .modal {{
             background: var(--card-bg-light); border-radius: 0.75rem; padding: 2rem;
-            width: 90%; max-width: 700px; max-height: 80vh;
+            width: 90%; max-width: 500px; max-height: 80vh;
             display: flex; flex-direction: column;
         }}
         .modal-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
         .modal-header h4 {{ font-size: 1.25rem; }}
         .modal-header .close-button {{ background: none; border: none; font-size: 2rem; cursor: pointer; }}
         .modal-body {{ flex-grow: 1; overflow-y: auto; }}
+        /* NEW: Styles for waiter list */
+        .waiter-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 40vh;
+            overflow-y: auto;
+            border: 1px solid var(--border-light);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }}
     </style>
 </head>
 <body class="">
@@ -278,57 +289,12 @@ ADMIN_HTML_TEMPLATE = """
     <div class="content-overlay" id="content-overlay"></div>
 
     <script>
-      // --- Theme Toggler ---
-      const themeToggle = document.getElementById('theme-toggle');
-      const body = document.body;
-
-      if (localStorage.getItem('theme') === 'light') {{
-        body.classList.remove('dark-mode');
-        themeToggle.classList.add('fa-moon');
-        themeToggle.classList.remove('fa-sun');
-      }} else {{
-        body.classList.add('dark-mode');
-        themeToggle.classList.add('fa-sun');
-        themeToggle.classList.remove('fa-moon');
-      }}
-
-      themeToggle.addEventListener('click', () => {{
-        body.classList.toggle('dark-mode');
-        themeToggle.classList.toggle('fa-sun');
-        themeToggle.classList.toggle('fa-moon');
-        if(body.classList.contains('dark-mode')){{
-          localStorage.setItem('theme', 'dark');
-        }} else {{
-          localStorage.setItem('theme', 'light');
-        }}
-      }});
-
-      // --- Mobile Sidebar Logic ---
-      const sidebar = document.getElementById('sidebar');
-      const menuToggle = document.getElementById('menu-toggle');
-      const sidebarClose = document.getElementById('sidebar-close');
-      const contentOverlay = document.getElementById('content-overlay');
-
-      const openSidebar = () => {{
-        sidebar.classList.add('open');
-        contentOverlay.classList.add('active');
-      }};
-
-      const closeSidebar = () => {{
-        sidebar.classList.remove('open');
-        contentOverlay.classList.remove('active');
-      }};
-
-      menuToggle.addEventListener('click', openSidebar);
-      sidebarClose.addEventListener('click', closeSidebar);
-      contentOverlay.addEventListener('click', closeSidebar);
-
+      // ... (скрипты темы и мобильного меню без изменений) ...
     </script>
 </body>
 </html>
 """
 
-# НОВИЙ ШАБЛОН ДЛЯ СТОРІНКИ "СТОЛИКИ"
 ADMIN_TABLES_BODY = """
 <style>
     .qr-code-img {{
@@ -355,7 +321,7 @@ ADMIN_TABLES_BODY = """
                     <th>ID</th>
                     <th>Назва</th>
                     <th>QR-код</th>
-                    <th>Закріплений офіціант</th>
+                    <th>Закріплені офіціанти</th>
                     <th>Дії</th>
                 </tr>
             </thead>
@@ -368,37 +334,46 @@ ADMIN_TABLES_BODY = """
 <div class="modal-overlay" id="assign-waiter-modal">
     <div class="modal">
         <div class="modal-header">
-            <h4 id="modal-title">Призначити офіціанта для столика</h4>
+            <h4 id="modal-title">Призначити офіціантів для столика</h4>
             <button type="button" class="close-button" onclick="closeModal()">&times;</button>
         </div>
-        <div class="modal-body">
-            <form id="assign-waiter-form" method="post">
-                <label for="waiter_id">Виберіть офіціанта (на зміні):</label>
-                <select id="waiter_id" name="waiter_id" required>
-                    </select>
-                <br>
-                <button type="submit">Призначити</button>
-            </form>
-        </div>
+        <form id="assign-waiter-form" method="post">
+            <div class="modal-body">
+                <label>Виберіть офіціантів (на зміні):</label>
+                <div id="waiter-list" class="waiter-list">
+                    </div>
+            </div>
+            <div style="padding-top: 1.5rem; border-top: 1px solid var(--border-light); margin-top: 1rem; display: flex; justify-content: flex-end;">
+                 <button type="submit">Зберегти</button>
+            </div>
+        </form>
     </div>
 </div>
 <script>
-function openAssignWaiterModal(tableId, tableName, waiters) {{
+function openAssignWaiterModal(tableId, tableName, allWaiters, assignedWaiterIds) {{
     const modal = document.getElementById('assign-waiter-modal');
     const form = document.getElementById('assign-waiter-form');
-    const select = document.getElementById('waiter_id');
+    const list = document.getElementById('waiter-list');
     const title = document.getElementById('modal-title');
     
-    title.innerText = `Призначити офіціанта для столика "${{tableName}}"`;
+    title.innerText = `Призначити офіціантів для столика "${{tableName}}"`;
     form.action = `/admin/tables/assign_waiter/${{tableId}}`;
-    select.innerHTML = '<option value="0">-- Зняти офіціанта --</option>'; // Опция для снятия назначения
+    list.innerHTML = '';
     
-    waiters.forEach(waiter => {{
-        const option = document.createElement('option');
-        option.value = waiter.id;
-        option.textContent = waiter.full_name;
-        select.appendChild(option);
-    }});
+    if (allWaiters.length === 0) {{
+        list.innerHTML = '<p>Немає офіціантів на зміні.</p>';
+    }} else {{
+        allWaiters.forEach(waiter => {{
+            const isChecked = assignedWaiterIds.includes(waiter.id);
+            const div = document.createElement('div');
+            div.className = 'checkbox-group';
+            div.innerHTML = `
+                <input type="checkbox" id="waiter_${{waiter.id}}" name="waiter_ids" value="${{waiter.id}}" ${{isChecked ? 'checked' : ''}}>
+                <label for="waiter_${{waiter.id}}">${{waiter.full_name}}</label>
+            `;
+            list.appendChild(div);
+        }});
+    }}
     
     modal.classList.add('active');
 }}
@@ -407,7 +382,6 @@ function closeModal() {{
     document.getElementById('assign-waiter-modal').classList.remove('active');
 }}
 
-// Закрытие модального окна по клику вне его
 window.onclick = function(event) {{
     const modal = document.getElementById('assign-waiter-modal');
     if (event.target == modal) {{
@@ -416,6 +390,8 @@ window.onclick = function(event) {{
 }}
 </script>
 """
+
+# ... (остальной код в файле templates.py без изменений) ...
 
 # ... (решта коду у файлі templates.py залишається без змін) ...
 # ВИПРАВЛЕНИЙ ШАБЛОН ДЛЯ ФОРМИ ЗАМОВЛЕННЯ
