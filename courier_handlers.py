@@ -14,6 +14,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload
 from typing import Dict, Any
 from urllib.parse import quote_plus
+import re # <--- ДОДАНО
 
 from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table
 from notification_manager import notify_all_parties_on_status_change
@@ -30,7 +31,7 @@ def get_staff_login_keyboard():
     builder.row(KeyboardButton(text="🤵 Вхід офіціанта"))
     return builder.as_markup(resize_keyboard=True)
 
-# НОВА ФУНКЦІЯ: Об'єднує кнопки всіх ролей
+# НОВА ФУНКЦІЯ: Об'єднує кнопки всіх ролей (КУР'ЄР, ОФІЦІАНТ)
 def get_staff_keyboard(employee: Employee):
     builder = ReplyKeyboardBuilder()
     role = employee.role
@@ -316,16 +317,18 @@ def register_courier_handlers(dp_admin: Dispatcher):
             for status in courier_statuses
         ]
         kb.row(*status_buttons)
+        
+        # НОВЕ: Кнопка для дзвінка клієнту (з очищеним номером)
+        if order.phone_number:
+            clean_phone = re.sub(r'[^0-9]', '', order.phone_number)
+            kb.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{clean_phone}"))
 
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
             # ВИПРАВЛЕНО: Правильне посилання на карту
             map_query = f"https://maps.google.com/?q={encoded_address}"
             kb.row(InlineKeyboardButton(text="🗺️ Показати на карті", url=map_query))
-            
-        # НОВЕ: Кнопка для дзвінка клієнту
-        if order.phone_number:
-            kb.row(InlineKeyboardButton(text="📞 Зателефонувати клієнту", url=f"tel:{order.phone_number}"))
+
 
         kb.row(InlineKeyboardButton(text="⬅️ До моїх замовлень", callback_data="show_courier_orders_list"))
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
