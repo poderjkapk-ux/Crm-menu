@@ -17,7 +17,7 @@ from models import Order, Product, Category, OrderStatus, Employee, Role, Settin
 from courier_handlers import get_operator_keyboard, get_staff_login_keyboard, get_courier_keyboard
 from notification_manager import notify_all_parties_on_status_change
 
-# Настройка логирования
+# Налаштування логування
 logger = logging.getLogger(__name__)
 
 class AdminEditOrderStates(StatesGroup):
@@ -29,7 +29,7 @@ class OperatorAuthStates(StatesGroup):
     waiting_for_phone = State()
 
 def parse_products_string(products_str: str) -> dict[str, int]:
-    """Разбирает строку 'Название x Количество, ...' на словарь."""
+    """Розбирає рядок 'Назва x Кількість, ...' на словник."""
     if not products_str: return {}
     products_dict = {}
     for part in products_str.split(', '):
@@ -37,15 +37,15 @@ def parse_products_string(products_str: str) -> dict[str, int]:
             name, quantity_str = part.rsplit(' x ', 1)
             products_dict[name] = int(quantity_str)
         except ValueError:
-            logging.warning(f"Could not parse product string part: {part}")
+            logging.warning(f"Не вдалося розібрати частину рядка продукту: {part}")
     return products_dict
 
 def build_products_string(products_dict: dict[str, int]) -> str:
-    """Собирает словарь обратно в строку 'Название x Количество, ...'."""
+    """Збирає словник назад у рядок 'Назва x Кількість, ...'."""
     return ", ".join([f"{name} x {quantity}" for name, quantity in products_dict.items()])
 
 async def recalculate_order_total(products_dict: dict[str, int], session: AsyncSession) -> int:
-    """Пересчитывает общую сумму заказа на основе обновленного состава."""
+    """Перераховує загальну суму замовлення на основі оновленого складу."""
     total = 0
     if not products_dict: return 0
     products_res = await session.execute(select(Product).where(Product.name.in_(list(products_dict.keys()))))
@@ -56,20 +56,20 @@ async def recalculate_order_total(products_dict: dict[str, int], session: AsyncS
     return total
 
 async def _generate_order_admin_view(order: Order, session: AsyncSession):
-    """Генерирует текст и клавиатуру для отображения заказа в админ-боте."""
+    """Генерує текст та клавіатуру для відображення замовлення в адмін-боті."""
     await session.refresh(order, ['status', 'courier'])
-    status_name = order.status.name if order.status else 'Неизвестный'
-    delivery_info = f"Адрес: {html.quote(order.address or 'Не указан')}" if order.is_delivery else 'Самовывоз'
-    time_info = f"Время: {html.quote(order.delivery_time)}"
-    source = f"Источник: {'Сайт' if order.user_id is None else 'Telegram-бот'}"
-    courier_info = order.courier.full_name if order.courier else 'Не назначен'
+    status_name = order.status.name if order.status else 'Невідомий'
+    delivery_info = f"Адреса: {html.quote(order.address or 'Не вказана')}" if order.is_delivery else 'Самовивіз'
+    time_info = f"Час: {html.quote(order.delivery_time)}"
+    source = f"Джерело: {'Сайт' if order.user_id is None else 'Telegram-бот'}"
+    courier_info = order.courier.full_name if order.courier else 'Не призначений'
     products_formatted = "- " + html.quote(order.products or '').replace(", ", "\n- ")
 
-    admin_text = (f"<b>Заказ #{order.id}</b> ({source})\n\n"
-                  f"<b>Клиент:</b> {html.quote(order.customer_name)}\n<b>Телефон:</b> {html.quote(order.phone_number)}\n"
+    admin_text = (f"<b>Замовлення #{order.id}</b> ({source})\n\n"
+                  f"<b>Клієнт:</b> {html.quote(order.customer_name)}\n<b>Телефон:</b> {html.quote(order.phone_number)}\n"
                   f"<b>{delivery_info}</b>\n<b>{time_info}</b>\n"
-                  f"<b>Курьер:</b> {courier_info}\n\n"
-                  f"<b>Блюда:</b>\n{products_formatted}\n\n<b>Сумма:</b> {order.total_price} грн\n\n"
+                  f"<b>Кур'єр:</b> {courier_info}\n\n"
+                  f"<b>Страви:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
                   f"<b>Статус:</b> {status_name}")
 
     kb_admin = InlineKeyboardBuilder()
@@ -84,30 +84,30 @@ async def _generate_order_admin_view(order: Order, session: AsyncSession):
     for i in range(0, len(status_buttons), 2):
         kb_admin.row(*status_buttons[i:i+2])
 
-    courier_button_text = f"👤 Назначить курьера ({order.courier.full_name if order.courier else 'Выберите'})"
+    courier_button_text = f"👤 Призначити кур'єра ({order.courier.full_name if order.courier else 'Виберіть'})"
     kb_admin.row(InlineKeyboardButton(text=courier_button_text, callback_data=f"select_courier_{order.id}"))
-    kb_admin.row(InlineKeyboardButton(text="✏️ Редактировать заказ", callback_data=f"edit_order_{order.id}"))
+    kb_admin.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}"))
     return admin_text, kb_admin.as_markup()
 
 async def _display_order_view(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Обновляет сообщение с деталями заказа."""
+    """Оновлює повідомлення з деталями замовлення."""
     order = await session.get(Order, order_id)
     if not order: return
     admin_text, kb_admin = await _generate_order_admin_view(order, session)
     try:
         await bot.edit_message_text(text=admin_text, chat_id=chat_id, message_id=message_id, reply_markup=kb_admin)
     except TelegramBadRequest as e:
-        logger.error(f"Failed to edit message in _display_order_view: {e}")
+        logger.error(f"Не вдалося відредагувати повідомлення в _display_order_view: {e}")
 
 async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Показывает меню редактирования состава заказа."""
+    """Показує меню редагування складу замовлення."""
     order = await session.get(Order, order_id)
     if not order: return
     products_dict = parse_products_string(order.products)
-    text = f"<b>Состав заказа #{order.id}</b> (Сумма: {order.total_price} грн)\n\n"
+    text = f"<b>Склад замовлення #{order.id}</b> (Сума: {order.total_price} грн)\n\n"
     kb = InlineKeyboardBuilder()
     if not products_dict:
-        text += "<i>Заказ пуст</i>"
+        text += "<i>Замовлення порожнє</i>"
     else:
         product_names = list(products_dict.keys())
         products_res = await session.execute(select(Product).where(Product.name.in_(product_names)))
@@ -120,22 +120,22 @@ async def _display_edit_items_menu(bot: Bot, chat_id: int, message_id: int, orde
                     InlineKeyboardButton(text="➕", callback_data=f"admin_change_qnt_{order.id}_{product.id}_1"),
                     InlineKeyboardButton(text="❌", callback_data=f"admin_delete_item_{order.id}_{product.id}")
                 )
-    kb.row(InlineKeyboardButton(text="➕ Добавить блюдо", callback_data=f"admin_add_item_start_{order_id}"))
+    kb.row(InlineKeyboardButton(text="➕ Додати страву", callback_data=f"admin_add_item_start_{order_id}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order_id}"))
     await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=kb.as_markup())
 
 async def _display_edit_customer_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Показывает меню редактирования данных клиента."""
+    """Показує меню редагування даних клієнта."""
     order = await session.get(Order, order_id)
     if not order: return
 
-    text = (f"<b>Редактирование клиента (Заказ #{order.id})</b>\n\n"
-            f"<b>Текущее имя:</b> {html.quote(order.customer_name)}\n"
-            f"<b>Текущий телефон:</b> {html.quote(order.phone_number)}")
+    text = (f"<b>Редагування клієнта (Замовлення #{order.id})</b>\n\n"
+            f"<b>Поточне ім'я:</b> {html.quote(order.customer_name)}\n"
+            f"<b>Поточний телефон:</b> {html.quote(order.phone_number)}")
 
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="Изменить имя", callback_data=f"change_name_start_{order_id}"),
-           InlineKeyboardButton(text="Изменить телефон", callback_data=f"change_phone_start_{order_id}"))
+    kb.row(InlineKeyboardButton(text="Змінити ім'я", callback_data=f"change_name_start_{order_id}"),
+           InlineKeyboardButton(text="Змінити телефон", callback_data=f"change_phone_start_{order_id}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order_id}"))
 
     await bot.edit_message_text(
@@ -146,21 +146,21 @@ async def _display_edit_customer_menu(bot: Bot, chat_id: int, message_id: int, o
     )
 
 async def _display_edit_delivery_menu(bot: Bot, chat_id: int, message_id: int, order_id: int, session: AsyncSession):
-    """Показывает меню редактирования доставки/самовывоза."""
+    """Показує меню редагування доставки/самовивозу."""
     order = await session.get(Order, order_id)
     if not order: return
 
-    delivery_type_str = "🚚 Доставка" if order.is_delivery else "🏠 Самовывоз"
-    text = (f"<b>Редактирование доставки (Заказ #{order.id})</b>\n\n"
+    delivery_type_str = "🚚 Доставка" if order.is_delivery else "🏠 Самовивіз"
+    text = (f"<b>Редагування доставки (Замовлення #{order.id})</b>\n\n"
             f"<b>Тип:</b> {delivery_type_str}\n"
-            f"<b>Адрес:</b> {html.quote(order.address or 'Не указан')}\n"
-            f"<b>Время:</b> {html.quote(order.delivery_time or 'Как можно скорее')}")
+            f"<b>Адреса:</b> {html.quote(order.address or 'Не вказана')}\n"
+            f"<b>Час:</b> {html.quote(order.delivery_time or 'Якнайшвидше')}")
 
     kb = InlineKeyboardBuilder()
-    toggle_text = "Сделать Самовывозом" if order.is_delivery else "Сделать Доставкой"
+    toggle_text = "Зробити Самовивозом" if order.is_delivery else "Зробити Доставкою"
     kb.row(InlineKeyboardButton(text=toggle_text, callback_data=f"toggle_delivery_type_{order.id}"))
     if order.is_delivery:
-        kb.row(InlineKeyboardButton(text="Изменить адрес", callback_data=f"change_address_start_{order_id}"))
+        kb.row(InlineKeyboardButton(text="Змінити адресу", callback_data=f"change_address_start_{order_id}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit_order_{order_id}"))
 
     await bot.edit_message_text(
@@ -172,17 +172,17 @@ async def _display_edit_delivery_menu(bot: Bot, chat_id: int, message_id: int, o
 
 
 def register_admin_handlers(dp: Dispatcher):
-    @dp.message(F.text == "🔐 Вход оператора")
+    @dp.message(F.text == "🔐 Вхід оператора")
     async def operator_login_start(message: Message, state: FSMContext, session: AsyncSession):
         employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
         if employee:
             if employee.role.can_manage_orders:
-                return await message.answer(f"✅ Вы уже авторизованы как оператор.", reply_markup=get_operator_keyboard(employee.is_on_shift))
+                return await message.answer(f"✅ Ви вже авторизовані як оператор.", reply_markup=get_operator_keyboard(employee.is_on_shift))
             elif employee.role.can_be_assigned:
-                return await message.answer("❌ Вы авторизованы как курьер. Для входа как оператор, сначала выйдите из системы.", reply_markup=get_courier_keyboard(employee.is_on_shift))
+                return await message.answer("❌ Ви авторизовані як кур'єр. Для входу як оператор, спочатку вийдіть із системи.", reply_markup=get_courier_keyboard(employee.is_on_shift))
         await state.set_state(OperatorAuthStates.waiting_for_phone)
-        kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_auth")).as_markup()
-        await message.answer("Пожалуйста, введите номер телефона для роли **оператора**:", reply_markup=kb)
+        kb = InlineKeyboardBuilder().add(InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_auth")).as_markup()
+        await message.answer("Будь ласка, введіть номер телефону для ролі **оператора**:", reply_markup=kb)
 
     @dp.message(OperatorAuthStates.waiting_for_phone)
     async def process_operator_phone(message: Message, state: FSMContext, session: AsyncSession):
@@ -192,9 +192,9 @@ def register_admin_handlers(dp: Dispatcher):
             employee.telegram_user_id = message.from_user.id
             await session.commit()
             await state.clear()
-            await message.answer(f"🎉 Здравствуйте, {employee.full_name}! Вы успешно авторизованы как {employee.role.name}.", reply_markup=get_operator_keyboard(employee.is_on_shift))
+            await message.answer(f"🎉 Доброго дня, {employee.full_name}! Ви успішно авторизовані як {employee.role.name}.", reply_markup=get_operator_keyboard(employee.is_on_shift))
         else:
-            await message.answer("❌ Сотрудник с таким номером не найден или не имеет прав Оператора.")
+            await message.answer("❌ Співробітника з таким номером не знайдено або він не має прав Оператора.")
     
     @dp.callback_query(F.data.startswith("change_order_status_"))
     async def change_order_status_admin(callback: CallbackQuery, session: AsyncSession):
@@ -206,11 +206,11 @@ def register_admin_handlers(dp: Dispatcher):
         order_id, new_status_id = int(parts[3]), int(parts[4])
 
         order = await session.get(Order, order_id)
-        if not order: return await callback.answer("Заказ не найден!", show_alert=True)
-        if order.status_id == new_status_id: return await callback.answer("Статус уже установлен.")
+        if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
+        if order.status_id == new_status_id: return await callback.answer("Статус вже встановлено.")
 
         old_status = await session.get(OrderStatus, order.status_id)
-        old_status_name = old_status.name if old_status else 'Неизвестный'
+        old_status_name = old_status.name if old_status else 'Невідомий'
 
         order.status_id = new_status_id
         
@@ -233,17 +233,17 @@ def register_admin_handlers(dp: Dispatcher):
         )
         
         await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
-        await callback.answer(f"Статус заказа #{order.id} изменен.")
+        await callback.answer(f"Статус замовлення #{order.id} змінено.")
 
     @dp.callback_query(F.data.startswith("edit_order_"))
     async def show_edit_order_menu(callback: CallbackQuery):
         order_id = int(callback.data.split("_")[2])
         kb = InlineKeyboardBuilder()
-        kb.row(InlineKeyboardButton(text="👤 Клиент", callback_data=f"edit_customer_{order_id}"),
-               InlineKeyboardButton(text="🍔 Состав заказа", callback_data=f"edit_items_{order_id}"))
+        kb.row(InlineKeyboardButton(text="👤 Клієнт", callback_data=f"edit_customer_{order_id}"),
+               InlineKeyboardButton(text="🍔 Склад замовлення", callback_data=f"edit_items_{order_id}"))
         kb.row(InlineKeyboardButton(text="🚚 Доставка", callback_data=f"edit_delivery_{order_id}"))
-        kb.row(InlineKeyboardButton(text="⬅️ Вернуться к заказу", callback_data=f"view_order_{order_id}"))
-        await callback.message.edit_text(f"📝 <b>Редактирование заказа #{order_id}</b>\nВыберите, что хотите изменить:", reply_markup=kb.as_markup())
+        kb.row(InlineKeyboardButton(text="⬅️ Повернутися до замовлення", callback_data=f"view_order_{order_id}"))
+        await callback.message.edit_text(f"📝 <b>Редагування замовлення #{order_id}</b>\nВиберіть, що хочете змінити:", reply_markup=kb.as_markup())
         await callback.answer()
 
     @dp.callback_query(F.data.startswith("view_order_"))
@@ -274,20 +274,20 @@ def register_admin_handlers(dp: Dispatcher):
         order_id = int(callback.data.split("_")[-1])
         await state.set_state(new_state)
         await state.update_data(order_id=order_id, message_id=callback.message.message_id)
-        await callback.message.edit_text(f"<b>Заказ #{order_id}</b>: {prompt_text}")
+        await callback.message.edit_text(f"<b>Замовлення #{order_id}</b>: {prompt_text}")
         await callback.answer()
 
     @dp.callback_query(F.data.startswith("change_name_start_"))
     async def change_name_start(callback: CallbackQuery, state: FSMContext):
-        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_name, "Введите новое имя клиента.")
+        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_name, "Введіть нове ім'я клієнта.")
 
     @dp.callback_query(F.data.startswith("change_phone_start_"))
     async def change_phone_start(callback: CallbackQuery, state: FSMContext):
-        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_phone, "Введите новый номер телефона.")
+        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_phone, "Введіть новий номер телефону.")
 
     @dp.callback_query(F.data.startswith("change_address_start_"))
     async def change_address_start(callback: CallbackQuery, state: FSMContext):
-        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_address, "Введите новый адрес доставки.")
+        await start_fsm_for_edit(callback, state, AdminEditOrderStates.waiting_for_new_address, "Введіть нову адресу доставки.")
 
     async def process_fsm_for_edit(message: Message, state: FSMContext, session: AsyncSession, field_to_update: str, menu_to_return_func):
         data = await state.get_data()
@@ -319,7 +319,7 @@ def register_admin_handlers(dp: Dispatcher):
         order_id, product_id = int(parts[3]), int(parts[4])
         order = await session.get(Order, order_id)
         product = await session.get(Product, product_id)
-        if not order or not product: return await callback.answer("Ошибка!", show_alert=True)
+        if not order or not product: return await callback.answer("Помилка!", show_alert=True)
 
         products_dict = parse_products_string(order.products)
         if "change_qnt" in callback.data:
@@ -354,8 +354,8 @@ def register_admin_handlers(dp: Dispatcher):
         for cat in categories:
             kb.add(InlineKeyboardButton(text=cat.name, callback_data=f"admin_show_cat_{order_id}_{cat.id}_1"))
         kb.adjust(2)
-        kb.row(InlineKeyboardButton(text="⬅️ Назад к составу заказа", callback_data=f"edit_items_{order_id}"))
-        await callback.message.edit_text("Выберите категорию:", reply_markup=kb.as_markup())
+        kb.row(InlineKeyboardButton(text="⬅️ Назад до складу замовлення", callback_data=f"edit_items_{order_id}"))
+        await callback.message.edit_text("Виберіть категорію:", reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith("admin_show_cat_"))
     async def admin_show_category(callback: CallbackQuery, session: AsyncSession):
@@ -365,22 +365,22 @@ def register_admin_handlers(dp: Dispatcher):
         for prod in products:
             kb.add(InlineKeyboardButton(text=f"{prod.name} ({prod.price} грн)", callback_data=f"admin_add_prod_{order_id}_{prod.id}"))
         kb.adjust(1)
-        kb.row(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"admin_add_item_start_{order_id}"))
-        await callback.message.edit_text("Выберите блюдо:", reply_markup=kb.as_markup())
+        kb.row(InlineKeyboardButton(text="⬅️ Назад до категорій", callback_data=f"admin_add_item_start_{order_id}"))
+        await callback.message.edit_text("Виберіть страву:", reply_markup=kb.as_markup())
 
     @dp.callback_query(F.data.startswith("admin_add_prod_"))
     async def admin_add_to_order(callback: CallbackQuery, session: AsyncSession):
         order_id, product_id = map(int, callback.data.split("_")[3:])
         order = await session.get(Order, order_id)
         product = await session.get(Product, product_id)
-        if not order or not product: return await callback.answer("Ошибка!", show_alert=True)
+        if not order or not product: return await callback.answer("Помилка!", show_alert=True)
         products_dict = parse_products_string(order.products)
         products_dict[product.name] = products_dict.get(product.name, 0) + 1
         order.products = build_products_string(products_dict)
         order.total_price = await recalculate_order_total(products_dict, session)
         await session.commit()
         await _display_edit_items_menu(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
-        await callback.answer(f"✅ {product.name} добавлено!")
+        await callback.answer(f"✅ {product.name} додано!")
 
     @dp.callback_query(F.data.startswith("select_courier_"))
     async def select_courier_start(callback: CallbackQuery, session: AsyncSession):
@@ -389,20 +389,20 @@ def register_admin_handlers(dp: Dispatcher):
         courier_role = courier_role_res.scalar_one_or_none()
         
         if not courier_role:
-            return await callback.answer("Ошибка: Роль 'Курьер' не найдена в системе.", show_alert=True)
+            return await callback.answer("Помилка: Роль 'Кур'єр' не знайдена в системі.", show_alert=True)
         
         couriers = (await session.execute(select(Employee).where(Employee.role_id == courier_role.id, Employee.is_on_shift == True).order_by(Employee.full_name))).scalars().all()
         
         kb = InlineKeyboardBuilder()
-        text = f"<b>Заказ #{order_id}</b>\nВыберите курьера (🟢 На смене):"
+        text = f"<b>Замовлення #{order_id}</b>\nВиберіть кур'єра (🟢 На зміні):"
         if not couriers:
-            text = "❌ В данный момент нет ни одного курьера на смене."
+            text = "❌ На даний момент немає жодного кур'єра на зміні."
         else:
             for courier in couriers:
                 kb.add(InlineKeyboardButton(text=courier.full_name, callback_data=f"assign_courier_{order_id}_{courier.id}"))
             kb.adjust(2)
         
-        kb.row(InlineKeyboardButton(text="❌ Отменить назначение", callback_data=f"assign_courier_{order_id}_0"))
+        kb.row(InlineKeyboardButton(text="❌ Скасувати призначення", callback_data=f"assign_courier_{order_id}_0"))
         kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_order_{order_id}"))
         
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
@@ -413,24 +413,24 @@ def register_admin_handlers(dp: Dispatcher):
         settings = await session.get(Settings, 1)
         order_id, courier_id = map(int, callback.data.split("_")[2:])
         order = await session.get(Order, order_id)
-        if not order: return await callback.answer("Заказ не найден!", show_alert=True)
+        if not order: return await callback.answer("Замовлення не знайдено!", show_alert=True)
 
         old_courier_id = order.courier_id
-        new_courier_name = "Не назначен"
+        new_courier_name = "Не призначений"
 
         if old_courier_id and old_courier_id != courier_id:
             old_courier = await session.get(Employee, old_courier_id)
             if old_courier and old_courier.telegram_user_id:
                 try:
-                    await callback.bot.send_message(old_courier.telegram_user_id, f"❗️ Заказ #{order.id} был снят с вас оператором.")
+                    await callback.bot.send_message(old_courier.telegram_user_id, f"❗️ Замовлення #{order.id} було знято з вас оператором.")
                 except Exception as e:
-                    logging.error(f"Не удалось уведомить бывшего курьера {old_courier.id}: {e}")
+                    logging.error(f"Не вдалося повідомити колишнього кур'єра {old_courier.id}: {e}")
 
         if courier_id == 0:
             order.courier_id = None
         else:
             new_courier = await session.get(Employee, courier_id)
-            if not new_courier: return await callback.answer("Курьер не найден!", show_alert=True)
+            if not new_courier: return await callback.answer("Кур'єра не знайдено!", show_alert=True)
             order.courier_id = courier_id
             new_courier_name = new_courier.full_name
             
@@ -442,21 +442,21 @@ def register_admin_handlers(dp: Dispatcher):
                     kb_courier.row(*[InlineKeyboardButton(text=s.name, callback_data=f"courier_set_status_{order.id}_{s.id}") for s in statuses])
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
-                        # ИСПРАВЛЕНО: Неверная ссылка на карту
+                        # ВИПРАВЛЕНО: Неправильне посилання на карту
                         map_query = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
-                        kb_courier.row(InlineKeyboardButton(text="🗺️ На карте", url=map_query))
+                        kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_query))
                     await callback.bot.send_message(
                         new_courier.telegram_user_id,
-                        f"🔔 Вам назначен новый заказ!\n\n<b>Заказ #{order.id}</b>\nАдрес: {html.quote(order.address or 'Самовывоз')}\nСумма: {order.total_price} грн.",
+                        f"🔔 Вам призначено нове замовлення!\n\n<b>Замовлення #{order.id}</b>\nАдреса: {html.quote(order.address or 'Самовивіз')}\nСума: {order.total_price} грн.",
                         reply_markup=kb_courier.as_markup()
                     )
                 except Exception as e:
-                    logging.error(f"Failed to notify new courier {new_courier.telegram_user_id}: {e}")
+                    logging.error(f"Не вдалося повідомити нового кур'єра {new_courier.telegram_user_id}: {e}")
         
         await session.commit()
         
         if settings and settings.admin_chat_id:
-            await callback.bot.send_message(settings.admin_chat_id, f"👤 Заказу #{order.id} назначен курьер: <b>{html.quote(new_courier_name)}</b>")
+            await callback.bot.send_message(settings.admin_chat_id, f"👤 Замовленню #{order.id} призначено кур'єра: <b>{html.quote(new_courier_name)}</b>")
         
         await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
-        await callback.answer(f"Курьер назначен: {new_courier_name}")
+        await callback.answer(f"Кур'єра призначено: {new_courier_name}")
