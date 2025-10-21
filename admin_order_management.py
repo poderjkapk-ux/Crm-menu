@@ -90,7 +90,9 @@ async def get_manage_order_page(
         history_html=history_html or "<p>Історія статусів порожня.</p>"
     )
 
-    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Керування замовленням #{order.id}", body=body, orders_active="active", **{k: "" for k in ["clients_active", "main_active", "products_active", "categories_active", "statuses_active", "settings_active", "employees_active", "reports_active", "menu_active", "tables_active"]}))
+    active_classes = {key: "" for key in ["clients_active", "main_active", "products_active", "categories_active", "statuses_active", "settings_active", "employees_active", "reports_active", "menu_active", "tables_active"]}
+    active_classes["orders_active"] = "active"
+    return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title=f"Керування замовленням #{order.id}", body=body, **active_classes))
 
 
 @router.post("/admin/order/manage/{order_id}/set_status")
@@ -182,7 +184,7 @@ async def web_assign_courier(
                     if order.is_delivery and order.address:
                         encoded_address = quote_plus(order.address)
                         # ВИПРАВЛЕНО: Неправильне посилання на карту
-                        map_url = f"https://maps.google.com/?q={encoded_address}"
+                        map_url = f"https://www.google.com/maps/search/?api=1&query={encoded_address}"
                         kb_courier.row(InlineKeyboardButton(text="🗺️ На карті", url=map_url))
                     
                     await admin_bot.send_message(
