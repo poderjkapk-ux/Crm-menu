@@ -79,33 +79,16 @@ ADMIN_HTML_TEMPLATE = """
         }}
         .sidebar-header .logo {{ display: flex; align-items: center; gap: 0.75rem; }}
         .sidebar-header .logo h2 {{ font-size: 1.5rem; font-weight: 700; color: var(--primary-color); }}
-        .sidebar nav a, .sidebar nav .nav-item > a {{
+        .sidebar nav a {{
             display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
             color: #6b7280; text-decoration: none; font-weight: 500;
             border-radius: 0.5rem; transition: all 0.2s ease; margin-bottom: 0.5rem;
         }}
-        body.dark-mode .sidebar nav a, body.dark-mode .sidebar nav .nav-item > a {{ color: #9ca3af; }}
-        .sidebar nav a:hover, .sidebar nav .nav-item > a:hover {{ background-color: #f3f4f6; color: var(--primary-color); }}
-        body.dark-mode .sidebar nav a:hover, body.dark-mode .sidebar nav .nav-item > a:hover {{ background-color: #374151; }}
-        .sidebar nav a.active, .sidebar nav .nav-item > a.active {{ background-color: var(--primary-color); color: white; box-shadow: var(--shadow); }}
-        .sidebar nav a i, .sidebar nav .nav-item > a i {{ width: 20px; text-align: center; }}
-        
-        /* --- Dropdown Menu in Sidebar --- */
-        .nav-item .submenu {{
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-in-out;
-            padding-left: 2.5rem; /* Indent submenu items */
-        }}
-        .nav-item.open .submenu {{
-            max-height: 500px; /* Adjust as needed */
-        }}
-        .nav-item .submenu a {{
-            font-size: 0.9em;
-            padding: 0.5rem 1rem;
-            margin-bottom: 0.25rem;
-        }}
-
+        body.dark-mode .sidebar nav a {{ color: #9ca3af; }}
+        .sidebar nav a:hover {{ background-color: #f3f4f6; color: var(--primary-color); }}
+        body.dark-mode .sidebar nav a:hover {{ background-color: #374151; }}
+        .sidebar nav a.active {{ background-color: var(--primary-color); color: white; box-shadow: var(--shadow); }}
+        .sidebar nav a i {{ width: 20px; text-align: center; }}
         .sidebar-footer {{ margin-top: auto; }}
         .sidebar-close {{
             display: none; background: none; border: none; font-size: 2rem;
@@ -209,7 +192,8 @@ ADMIN_HTML_TEMPLATE = """
             background-color: #e5e7eb; color: #374151;
         }}
         .actions {{ text-align: right; }}
-        .actions a, .actions button {{ margin-left: 0.5rem; }}
+        .actions a {{ color: #6b7280; margin-left: 0.75rem; font-size: 1.1rem; text-decoration: none; }}
+        .actions a:hover {{ color: var(--primary-color); }}
         label {{ font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 0.9rem; }}
         input, textarea, select {{
             width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-light);
@@ -263,18 +247,9 @@ ADMIN_HTML_TEMPLATE = """
         </div>
         <nav>
             <a href="/admin" class="{main_active}"><i class="fa-solid fa-chart-line"></i> Головна</a>
-            
-            <div class="nav-item {orders_active}">
-                <a href="#"><i class="fa-solid fa-box-archive"></i> Замовлення</a>
-                <div class="submenu">
-                    <a href="/admin/orders" class="{delivery_orders_active}"><i class="fa-solid fa-truck"></i> Доставка</a>
-                    <a href="/admin/in_house_orders" class="{in_house_orders_active}"><i class="fa-solid fa-bell-concierge"></i> У закладі</a>
-                </div>
-            </div>
-            
+            <a href="/admin/orders" class="{orders_active}"><i class="fa-solid fa-box-archive"></i> Замовлення</a>
             <a href="/admin/clients" class="{clients_active}"><i class="fa-solid fa-users-line"></i> Клієнти</a>
-            <a href="/admin/tables" class="{tables_active}"><i class="fa-solid fa-chair"></i> Столики</a>
-            <a href="/admin/products" class="{products_active}"><i class="fa-solid fa-burger"></i> Страви</a>
+            <a href="/admin/tables" class="{tables_active}"><i class="fa-solid fa-chair"></i> Столики</a> <a href="/admin/products" class="{products_active}"><i class="fa-solid fa-burger"></i> Страви</a>
             <a href="/admin/categories" class="{categories_active}"><i class="fa-solid fa-folder-open"></i> Категорії</a>
             <a href="/admin/menu" class="{menu_active}"><i class="fa-solid fa-file-lines"></i> Сторінки меню</a>
             <a href="/admin/employees" class="{employees_active}"><i class="fa-solid fa-users"></i> Співробітники</a>
@@ -347,69 +322,21 @@ ADMIN_HTML_TEMPLATE = """
       menuToggle.addEventListener('click', openSidebar);
       sidebarClose.addEventListener('click', closeSidebar);
       contentOverlay.addEventListener('click', closeSidebar);
-      
-      // --- Sidebar Dropdown Logic ---
-      document.querySelectorAll('.sidebar .nav-item > a').forEach(item => {{
-          // Check if the item has a submenu
-          if (item.nextElementSibling && item.nextElementSibling.classList.contains('submenu')) {{
-              item.addEventListener('click', event => {{
-                  event.preventDefault();
-                  item.parentElement.classList.toggle('open');
-              }});
-          }}
-      }});
-      
-      // Keep dropdown open if a submenu link is active
-      const activeSubmenuLink = document.querySelector('.submenu a.active');
-      if (activeSubmenuLink) {{
-          const parentNavItem = activeSubmenuLink.closest('.nav-item');
-          if (parentNavItem) {{
-              parentNavItem.classList.add('open');
-          }}
-      }}
-
 
     </script>
 </body>
 </html>
 """
 
-# ОНОВЛЕНИЙ ШАБЛОН ДЛЯ СТОРІНКИ "СТОЛИКИ"
+# НОВЫЙ ШАБЛОН ДЛЯ СТРАНИЦЫ "СТОЛИКИ"
 ADMIN_TABLES_BODY = """
 <style>
     .qr-code-img {{
-        width: 80px; height: 80px; border: 1px solid var(--border-light);
-        padding: 4px; background: white; border-radius: 0.5rem;
-    }}
-    .waiter-list span {{
-        display: inline-block; background-color: #e5e7eb;
-        padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.9rem;
-        margin: 2px;
-    }}
-    body.dark-mode .waiter-list span {{
-        background-color: #374151;
-    }}
-    /* Modal styles for multiselect */
-    #waiter-options-container {{
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-        margin-top: 1rem;
-        max-height: 300px;
-        overflow-y: auto;
-    }}
-    .waiter-option label {{
-        display: flex; align-items: center; gap: 0.75rem;
-        padding: 0.75rem; border: 1px solid var(--border-light);
-        border-radius: 0.5rem; cursor: pointer;
-    }}
-    .waiter-option input[type="checkbox"] {{ display: none; }}
-    .waiter-option input[type="checkbox"]:checked + label {{
-        background-color: #dbeafe;
-        border-color: var(--primary-color);
-    }}
-    body.dark-mode .waiter-option input[type="checkbox"]:checked + label {{
-        background-color: #1e293b;
+        width: 100px;
+        height: 100px;
+        border: 1px solid var(--border-light);
+        padding: 5px;
+        background: white;
     }}
 </style>
 <div class="card">
@@ -428,11 +355,11 @@ ADMIN_TABLES_BODY = """
                     <th>ID</th>
                     <th>Назва</th>
                     <th>QR-код</th>
-                    <th>Закріплені офіціанти</th>
-                    <th class="actions">Дії</th>
+                    <th>Закріплений офіціант</th>
+                    <th>Дії</th>
                 </tr>
             </thead>
-            <tbody id="tables-tbody">
+            <tbody>
                 {rows}
             </tbody>
         </table>
@@ -441,83 +368,46 @@ ADMIN_TABLES_BODY = """
 <div class="modal-overlay" id="assign-waiter-modal">
     <div class="modal">
         <div class="modal-header">
-            <h4 id="modal-title">Призначити офіціантів</h4>
+            <h4 id="modal-title">Призначити офіціанта для столика</h4>
             <button type="button" class="close-button" onclick="closeModal()">&times;</button>
         </div>
         <div class="modal-body">
-            <p>Виберіть одного або кількох офіціантів (на зміні):</p>
-            <div id="waiter-options-container"></div>
-            <div style="margin-top: 1.5rem; text-align: right;">
-                 <button type="button" class="button secondary" onclick="closeModal()">Скасувати</button>
-                 <button type="button" class="button" id="save-waiters-btn">Зберегти</button>
-            </div>
+            <form id="assign-waiter-form" method="post">
+                <label for="waiter_id">Виберіть офіціанта (на зміні):</label>
+                <select id="waiter_id" name="waiter_id" required>
+                    </select>
+                <br>
+                <button type="submit">Призначити</button>
+            </form>
         </div>
     </div>
 </div>
 <script>
-let currentTableId = null;
-
-function openAssignWaiterModal(tableId, tableName, allWaiters, assignedWaiterIds) {{
-    currentTableId = tableId;
+function openAssignWaiterModal(tableId, tableName, waiters) {{
     const modal = document.getElementById('assign-waiter-modal');
-    const optionsContainer = document.getElementById('waiter-options-container');
+    const form = document.getElementById('assign-waiter-form');
+    const select = document.getElementById('waiter_id');
     const title = document.getElementById('modal-title');
     
-    title.innerText = `Призначити офіціантів для столика: "${{tableName}}"`;
-    optionsContainer.innerHTML = '';
+    title.innerText = `Призначити офіціанта для столика "${{tableName}}"`;
+    form.action = `/admin/tables/assign_waiter/${{tableId}}`;
+    select.innerHTML = '<option value="0">-- Зняти офіціанта --</option>'; // Опция для снятия назначения
     
-    if (allWaiters.length === 0) {{
-        optionsContainer.innerHTML = '<p>Немає офіціантів на зміні.</p>';
-    }} else {{
-        allWaiters.forEach(waiter => {{
-            const isChecked = assignedWaiterIds.includes(waiter.id);
-            const optionDiv = document.createElement('div');
-            optionDiv.className = 'waiter-option';
-            optionDiv.innerHTML = `
-                <input type="checkbox" id="waiter-${{waiter.id}}" value="${{waiter.id}}" ${{isChecked ? 'checked' : ''}}>
-                <label for="waiter-${{waiter.id}}">${{waiter.full_name}}</label>
-            `;
-            optionsContainer.appendChild(optionDiv);
-        }});
-    }}
+    waiters.forEach(waiter => {{
+        const option = document.createElement('option');
+        option.value = waiter.id;
+        option.textContent = waiter.full_name;
+        select.appendChild(option);
+    }});
     
     modal.classList.add('active');
 }}
 
 function closeModal() {{
     document.getElementById('assign-waiter-modal').classList.remove('active');
-    currentTableId = null;
 }}
 
-document.getElementById('save-waiters-btn').addEventListener('click', async () => {{
-    if (!currentTableId) return;
-
-    const selectedWaiterIds = Array.from(document.querySelectorAll('#waiter-options-container input:checked')).map(cb => parseInt(cb.value));
-
-    try {{
-        const response = await fetch(`/admin/tables/assign_waiters/${{currentTableId}}`, {{
-            method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify({{ waiter_ids: selectedWaiterIds }})
-        }});
-        
-        if (!response.ok) {{
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Network response was not ok');
-        }}
-
-        // Просто перезавантажуємо сторінку для простоти, оскільки бекенд вже в базі
-        window.location.reload();
-
-    }} catch (error) {{
-        console.error('Error assigning waiters:', error);
-        alert('Помилка при призначенні офіціантів: ' + error.message);
-    }} finally {{
-        closeModal();
-    }}
-}});
-
-// Закриття модального вікна по кліку поза ним
+// Закрытие модального окна по клику вне его
 window.onclick = function(event) {{
     const modal = document.getElementById('assign-waiter-modal');
     if (event.target == modal) {{
@@ -527,36 +417,8 @@ window.onclick = function(event) {{
 </script>
 """
 
-ADMIN_IN_HOUSE_ORDERS_BODY = """
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2><i class="fa-solid fa-bell-concierge"></i> Замовлення у закладі</h2>
-    </div>
-    <form action="/admin/in_house_orders" method="get" class="search-form">
-        <input type="text" name="search" placeholder="Пошук за ID, столиком..." value="{search_query}">
-        <button type="submit">🔍 Знайти</button>
-    </form>
-    <div class="table-wrapper">
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Столик</th>
-                    <th>Сума</th>
-                    <th>Статус</th>
-                    <th>Склад</th>
-                    <th>Дії</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-    </div>
-    {pagination}
-</div>
-"""
-
+# ... (остальной код в файле templates.py остается без изменений) ...
+# ИСПРАВЛЕННЫЙ ШАБЛОН ДЛЯ ФОРМЫ ЗАКАЗА
 ADMIN_ORDER_FORM_BODY = """
 <style>
     .form-grid {{
@@ -1735,6 +1597,284 @@ WEB_ORDER_HTML = """
 </body>
 </html>
 """
+
+ADMIN_EMPLOYEE_BODY = """
+<div class="card">
+    <ul class="nav-tabs">
+        <li class="nav-item"><a href="/admin/employees" class="active">Співробітники</a></li>
+        <li class="nav-item"><a href="/admin/roles">Ролі</a></li>
+    </ul>
+    <h2>👤 Додати співробітника</h2>
+    <form action="/admin/add_employee" method="post">
+        <label for="full_name">Повне ім'я:</label><input type="text" id="full_name" name="full_name" required>
+        <label for="phone_number">Номер телефону (для авторизації):</label><input type="text" id="phone_number" name="phone_number" placeholder="+380XX XXX XX XX" required>
+        <label for="role_id">Роль:</label><select id="role_id" name="role_id" required>{role_options}</select>
+        <button type="submit">Додати співробітника</button>
+    </form>
+</div>
+<div class="card">
+    <h2>👥 Список співробітників</h2>
+    <p>🟢 - На зміні (авторизований)</p>
+    <table><thead><tr><th>ID</th><th>Ім'я</th><th>Телефон</th><th>Роль</th><th>Статус</th><th>Telegram ID</th><th>Дії</th></tr></thead><tbody>
+    {rows}
+    </tbody></table>
+</div>
+"""
+
+ADMIN_ROLES_BODY = """
+<div class="card">
+    <ul class="nav-tabs">
+        <li class="nav-item"><a href="/admin/employees">Співробітники</a></li>
+        <li class="nav-item"><a href="/admin/roles" class="active">Ролі</a></li>
+    </ul>
+    <h2>Додати нову роль</h2>
+    <form action="/admin/add_role" method="post">
+        <label for="name">Назва ролі:</label><input type="text" id="name" name="name" required>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_manage_orders" name="can_manage_orders" value="true">
+            <label for="can_manage_orders">Може керувати замовленнями (Оператор)</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="can_be_assigned" name="can_be_assigned" value="true">
+            <label for="can_be_assigned">Може бути призначений на замовлення (Кур'єр)</label>
+        </div>
+        <button type="submit">Додати роль</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Список ролей</h2>
+    <table><thead><tr><th>ID</th><th>Назва</th><th>Керування замовленнями</th><th>Призначення на доставку</th><th>Дії</th></tr></thead><tbody>
+    {rows}
+    </tbody></table>
+</div>
+"""
+ADMIN_REPORTS_BODY = """
+<div class="card">
+    <h2>Фільтр звіту</h2>
+    <form action="/admin/reports/couriers" method="get" class="search-form">
+        <label for="date_from">Дата з:</label>
+        <input type="date" id="date_from" name="date_from" value="{date_from}">
+        <label for="date_to">Дата по:</label>
+        <input type="date" id="date_to" name="date_to" value="{date_to}">
+        <button type="submit">Сформувати звіт</button>
+    </form>
+</div>
+<div class="card">
+    <h2>Результати звіту за період з {date_from_formatted} по {date_to_formatted}</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Ім'я кур'єра</th>
+                <th>Кількість виконаних замовлень</th>
+            </tr>
+        </thead>
+        <tbody>
+            {report_rows}
+        </tbody>
+    </table>
+</div>
+"""
+
+ADMIN_SETTINGS_BODY = """
+<div class="card">
+    <form action="/admin/settings" method="post" enctype="multipart/form-data">
+        <h2>⚙️ Основні налаштування</h2>
+        
+        <h3>Telegram Боти</h3>
+        <label>Токен клієнтського бота:</label><input type="text" name="client_bot_token" value="{client_bot_token}">
+        <label>Токен адміністративного бота:</label><input type="text" name="admin_bot_token" value="{admin_bot_token}">
+        <label>ID загального чату для замовлень:</label><input type="text" name="admin_chat_id" value="{admin_chat_id}" placeholder="Сюди будуть приходити всі замовлення для огляду">
+        
+        <h3>Зовнішній вигляд</h3>
+        <label>Логотип (завантажте новий, щоб замінити):</label>
+        <input type="file" name="logo_file" accept="image/*">
+        {current_logo_html}
+
+        <h3>Інтеграція з R-Keeper</h3>
+        <div class="checkbox-group"><input type="checkbox" name="r_keeper_enabled" id="r_keeper_enabled" {r_keeper_enabled_checked}><label for="r_keeper_enabled">Увімкнути інтеграцію</label></div>
+        <label>API URL:</label><input type="text" name="r_keeper_api_url" value="{r_keeper_api_url}">
+        <label>Користувач:</label><input type="text" name="r_keeper_user" value="{r_keeper_user}">
+        <label>Пароль:</label><input type="password" name="r_keeper_password" value="{r_keeper_password}">
+        <label>Код станції:</label><input type="text" name="r_keeper_station_code" value="{r_keeper_station_code}">
+        <label>Тип оплати:</label><input type="text" name="r_keeper_payment_type" value="{r_keeper_payment_type}">
+
+        <h3 style="margin-top: 2rem;">Налаштування Favicon</h3>
+        <p>Завантажте необхідні файли favicon. Після завантаження оновіть сторінку (Ctrl+F5), щоб побачити зміни.</p>
+        <h4>Поточні іконки</h4>
+        <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 2rem; background: #f0f0f0; padding: 1rem; border-radius: 8px;">
+            <div><img src="/static/favicons/favicon-16x16.png?v={cache_buster}" alt="16x16" style="border: 1px solid #ccc;"><br><small>16x16</small></div>
+            <div><img src="/static/favicons/favicon-32x32.png?v={cache_buster}" alt="32x32" style="border: 1px solid #ccc;"><br><small>32x32</small></div>
+            <div><img src="/static/favicons/apple-touch-icon.png?v={cache_buster}" alt="Apple Touch Icon" style="width: 60px; height: 60px; border: 1px solid #ccc;"><br><small>Apple Icon</small></div>
+        </div>
+
+        <h4>Завантажити нові іконки</h4>
+        <div class="form-grid" style="grid-template-columns: 1fr;">
+            <div class="form-group"><label for="apple_touch_icon">apple-touch-icon.png (180x180)</label><input type="file" id="apple_touch_icon" name="apple_touch_icon" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_32x32">favicon-32x32.png</label><input type="file" id="favicon_32x32" name="favicon_32x32" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_16x16">favicon-16x16.png</label><input type="file" id="favicon_16x16" name="favicon_16x16" accept="image/png"></div>
+            <div class="form-group"><label for="favicon_ico">favicon.ico (всі розміри)</label><input type="file" id="favicon_ico" name="favicon_ico" accept="image/x-icon"></div>
+            <div class="form-group"><label for="site_webmanifest">site.webmanifest</label><input type="file" id="site_webmanifest" name=".webmanifest"></div>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+            <button type="submit">Зберегти всі налаштування</button>
+        </div>
+    </form>
+</div>
+"""
+
+# Template for the Menu Item management page in the admin panel
+ADMIN_MENU_BODY = """
+<div class="card">
+    <h2>{form_title}</h2>
+    <form action="{form_action}" method="post">
+        <label for="title">Заголовок (текст на кнопці):</label>
+        <input type="text" id="title" name="title" value="{item_title}" required>
+        
+        <label for="content">Зміст сторінки (можна використовувати HTML-теги):</label>
+        <textarea id="content" name="content" rows="10" required>{item_content}</textarea>
+        
+        <label for="sort_order">Порядок сортування (менше = вище):</label>
+        <input type="number" id="sort_order" name="sort_order" value="{item_sort_order}" required>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="show_on_website" name="show_on_website" value="true" {item_show_on_website_checked}>
+            <label for="show_on_website">Показувати на сайті</label>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="show_in_telegram" name="show_in_telegram" value="true" {item_show_in_telegram_checked}>
+            <label for="show_in_telegram">Показувати в Telegram-боті</label>
+        </div>
+        
+        <button type="submit">{button_text}</button>
+        <a href="/admin/menu" class="button secondary">Скасувати</a>
+    </form>
+</div>
+<div class="card">
+    <h2>📜 Список сторінок</h2>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Заголовок</th>
+                    <th>Сортування</th>
+                    <th>На сайті</th>
+                    <th>В Telegram</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </div>
+</div>
+"""
+
+ADMIN_ORDER_MANAGE_BODY = """
+<style>
+    .manage-grid {{
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 2rem;
+    }}
+    .order-details-card .detail-item {{
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-light);
+    }}
+    .order-details-card .detail-item:last-child {{
+        border-bottom: none;
+    }}
+    .order-details-card .detail-item strong {{
+        color: #6b7280;
+    }}
+    body.dark-mode .order-details-card .detail-item strong {{
+        color: #9ca3af;
+    }}
+    .status-history {{
+        list-style-type: none;
+        padding-left: 1rem;
+        border-left: 2px solid var(--border-light);
+    }}
+    .status-history li {{
+        margin-bottom: 0.75rem;
+        position: relative;
+        font-size: 0.9rem;
+    }}
+    .status-history li::before {{
+        content: '✓';
+        position: absolute;
+        left: -1.1rem;
+        top: 2px;
+        color: var(--primary-color);
+        font-weight: 900;
+    }}
+    @media (max-width: 992px) {{
+        .manage-grid {{
+            grid-template-columns: 1fr;
+        }}
+    }}
+</style>
+<div class="manage-grid">
+    <div class="left-column">
+        <div class="card order-details-card">
+            <h2>Деталі замовлення #{order_id}</h2>
+            <div class="detail-item">
+                <strong>Клієнт:</strong>
+                <span>{customer_name}</span>
+            </div>
+            <div class="detail-item">
+                <strong>Телефон:</strong>
+                <span>{phone_number}</span>
+            </div>
+            <div class="detail-item">
+                <strong>Адреса:</strong>
+                <span>{address}</span>
+            </div>
+             <div class="detail-item">
+                <strong>Сума:</strong>
+                <span>{total_price} грн</span>
+            </div>
+            <div class="detail-item" style="flex-direction: column; align-items: start;">
+                <strong style="margin-bottom: 0.5rem;">Склад замовлення:</strong>
+                <div>{products_html}</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Історія статусів</h2>
+            {history_html}
+        </div>
+    </div>
+    <div class="right-column">
+        <div class="card">
+            <h2>Керування статусом</h2>
+            <form action="/admin/order/manage/{order_id}/set_status" method="post">
+                <label for="status_id">Новий статус:</label>
+                <select name="status_id" id="status_id" required>
+                    {status_options}
+                </select>
+                <button type="submit">Змінити статус</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Призначення кур'єра</h2>
+            <form action="/admin/order/manage/{order_id}/assign_courier" method="post">
+                <label for="courier_id">Кур'єр (на зміні):</label>
+                <select name="courier_id" id="courier_id" required>
+                    {courier_options}
+                </select>
+                <button type="submit">Призначити кур'єра</button>
+            </form>
+        </div>
+    </div>
+</div>
+"""
+
+
+# НОВЫЕ ШАБЛОНЫ ДЛЯ РАЗДЕЛА "КЛИЕНТЫ"
 
 ADMIN_CLIENTS_LIST_BODY = """
 <div class="card">
