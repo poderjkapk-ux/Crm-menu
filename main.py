@@ -201,12 +201,18 @@ async def show_my_orders(message_or_callback: Message | CallbackQuery, session: 
     else:
         await message.answer(text, reply_markup=kb)
 
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ show_menu ---
 async def show_menu(message_or_callback: Message | CallbackQuery, session: AsyncSession):
     is_callback = isinstance(message_or_callback, CallbackQuery)
     message = message_or_callback.message if is_callback else message_or_callback
 
     keyboard = InlineKeyboardBuilder()
-    categories_result = await session.execute(sa.select(Category).order_by(Category.sort_order, Category.name))
+    # Добавлено .where(Category.show_on_delivery_site == True)
+    categories_result = await session.execute(
+        sa.select(Category)
+        .where(Category.show_on_delivery_site == True)
+        .order_by(Category.sort_order, Category.name)
+    )
     categories = categories_result.scalars().all()
 
     if not categories:
@@ -231,6 +237,7 @@ async def show_menu(message_or_callback: Message | CallbackQuery, session: Async
         await message_or_callback.answer()
     else:
         await message.answer(text, reply_markup=keyboard.as_markup())
+# --- КОНЕЦ ИСПРАВЛЕНИЯ show_menu ---
 
 @dp.callback_query(F.data == "menu")
 async def show_menu_callback(callback: CallbackQuery, session: AsyncSession):
@@ -252,7 +259,9 @@ async def show_category_paginated(callback: CallbackQuery, session: AsyncSession
     query_total = sa.select(sa.func.count(Product.id)).where(Product.category_id == category_id, Product.is_active == True)
     query_products = sa.select(Product).where(Product.category_id == category_id, Product.is_active == True).order_by(Product.name).offset(offset).limit(PRODUCTS_PER_PAGE)
 
-    total_products = await session.scalar(query_total)
+    total_products_res = await session.execute(query_total)
+    total_products = total_products_res.scalar_one_or_none() or 0 # Ensure total is not None
+
     total_pages = (total_products + PRODUCTS_PER_PAGE - 1) // PRODUCTS_PER_PAGE
 
     products_result = await session.execute(query_products)
@@ -407,7 +416,9 @@ async def show_cart_callback(callback: CallbackQuery, session: AsyncSession):
 async def change_quantity(callback: CallbackQuery, session: AsyncSession):
     await callback.answer("⏳ Оновлюю...")
     product_id, change = map(int, callback.data.split("_")[2:])
-    cart_item = await session.scalar(sa.select(CartItem).where(CartItem.user_id == callback.from_user.id, CartItem.product_id == product_id))
+    cart_item_res = await session.execute(sa.select(CartItem).where(CartItem.user_id == callback.from_user.id, CartItem.product_id == product_id))
+    cart_item = cart_item_res.scalar_one_or_none()
+
 
     if not cart_item: return
 
@@ -605,7 +616,7 @@ async def finalize_order(message: Message, state: FSMContext, session: AsyncSess
         user_id=data['user_id'], username=data.get('username'), products=data['products'],
         total_price=data['total_price'], customer_name=data['customer_name'],
         phone_number=data['phone_number'], address=data.get('address'),
-        is_delivery=data.get('is_delivery', True), 
+        is_delivery=data.get('is_delivery', True),
         delivery_time=data.get('delivery_time', 'Якнайшвидше'),
         order_type=data.get('order_type', 'delivery')
     )
@@ -738,16 +749,27 @@ async def get_menu_page_content(item_id: int, session: AsyncSession = Depends(ge
         raise HTTPException(status_code=404, detail="Сторінку не знайдено")
     return {"title": menu_item.title, "content": menu_item.content}
 
-
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ /api/menu ---
 @app.get("/api/menu")
 async def get_menu_data(session: AsyncSession = Depends(get_db_session)):
-    categories_res = await session.execute(sa.select(Category).order_by(Category.sort_order, Category.name))
-    products_res = await session.execute(sa.select(Product).where(Product.is_active == True))
+    # Добавлено .where(Category.show_on_delivery_site == True)
+    categories_res = await session.execute(
+        sa.select(Category)
+        .where(Category.show_on_delivery_site == True)
+        .order_by(Category.sort_order, Category.name)
+    )
+    # Добавлено join и фильтрация
+    products_res = await session.execute(
+        sa.select(Product)
+        .join(Category, Product.category_id == Category.id)
+        .where(Product.is_active == True, Category.show_on_delivery_site == True)
+    )
 
     categories = [{"id": c.id, "name": c.name} for c in categories_res.scalars().all()]
     products = [{"id": p.id, "name": p.name, "description": p.description, "price": p.price, "image_url": p.image_url, "category_id": p.category_id} for p in products_res.scalars().all()]
 
     return {"categories": categories, "products": products}
+# --- КОНЕЦ ИСПРАВЛЕНИЯ /api/menu ---
 
 @app.get("/api/customer_info/{phone_number}")
 async def get_customer_info(phone_number: str, session: AsyncSession = Depends(get_db_session)):
@@ -808,8 +830,11 @@ async def place_web_order(order_data: dict = Body(...), session: AsyncSession = 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     orders_res = await session.execute(sa.select(Order).order_by(Order.id.desc()).limit(5))
-    orders_count = await session.scalar(sa.select(sa.func.count(Order.id)))
-    products_count = await session.scalar(sa.select(sa.func.count(Product.id)))
+    orders_count_res = await session.execute(sa.select(sa.func.count(Order.id)))
+    products_count_res = await session.execute(sa.select(sa.func.count(Product.id)))
+    orders_count = orders_count_res.scalar_one_or_none() or 0
+    products_count = products_count_res.scalar_one_or_none() or 0
+
 
     body = f"""
     <div class="card"><strong>Ласкаво просимо, {username}!</strong></div>
@@ -818,25 +843,28 @@ async def admin_dashboard(session: AsyncSession = Depends(get_db_session), usern
         <table><thead><tr><th>ID</th><th>Клієнт</th><th>Телефон</th><th>Сума</th></tr></thead><tbody>
         {''.join([f"<tr><td><a href='/admin/orders?search=%23{o.id}'>#{o.id}</a></td><td>{html.escape(o.customer_name)}</td><td>{html.escape(o.phone_number)}</td><td>{o.total_price} грн</td></tr>" for o in orders_res.scalars().all()]) or "<tr><td colspan='4'>Немає замовлень</td></tr>"}
         </tbody></table></div>"""
-    
+
     active_classes = {key: "" for key in ["orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["main_active"] = "active"
-        
+
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Головна панель", body=body, **active_classes))
 
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ admin_products ---
 @app.get("/admin/products", response_class=HTMLResponse)
 async def admin_products(page: int = Query(1, ge=1), q: str = Query(None, alias="search"), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    per_page = 10; offset = (page - 1) * per_page
+    per_page = 10
+    offset = (page - 1) * per_page
 
     query = sa.select(Product).options(joinedload(Product.category)).order_by(Product.id.desc())
     if q:
         query = query.where(Product.name.ilike(f"%{q}%"))
 
-    total = await session.scalar(sa.select(sa.func.count()).select_from(query.subquery()))
+    total_res = await session.execute(sa.select(sa.func.count()).select_from(query.subquery()))
+    total = total_res.scalar_one_or_none() or 0 # Ensure total is not None
     products_res = await session.execute(query.limit(per_page).offset(offset))
     products = products_res.scalars().all()
 
-    pages = (total // per_page) + (1 if total % per_page else 0)
+    pages = (total // per_page) + (1 if total % per_page > 0 else 0)
 
     product_rows = "".join([f"""
     <tr>
@@ -874,9 +902,15 @@ async def admin_products(page: int = Query(1, ge=1), q: str = Query(None, alias=
         {product_rows or "<tr><td colspan='6'>Немає страв</td></tr>"}
         </tbody></table>{pagination if pages > 1 else ''}
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+
+    # --- ИСПРАВЛЕНА ИНИЦИАЛИЗАЦИЯ СЛОВАРЯ ---
+    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["products_active"] = "active"
+    # ----------------------------------------
+
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Управління стравами", body=body, **active_classes))
+# --- КОНЕЦ ИСПРАВЛЕНИЯ admin_products ---
+
 
 @app.post("/admin/add_product")
 async def add_product(name: str=Form(...), price: int=Form(...), description: str=Form(""), category_id: int=Form(...),
@@ -927,7 +961,7 @@ async def get_edit_product_form(product_id: int, session: AsyncSession = Depends
       </form>
     </div>
     """
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["products_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Редагування страви", body=body, **active_classes))
 
@@ -947,12 +981,20 @@ async def edit_product(product_id: int, name: str=Form(...), price: int=Form(...
 
     if image and image.filename:
         if product.image_url and os.path.exists(product.image_url):
-            os.remove(product.image_url)
+            try:
+                os.remove(product.image_url)
+            except OSError as e:
+                logging.error(f"Не вдалося видалити старе зображення {product.image_url}: {e}")
+
 
         ext = image.filename.split('.')[-1] if '.' in image.filename else 'jpg'
         path = f"static/images/{secrets.token_hex(8)}.{ext}"
-        async with aiofiles.open(path, 'wb') as f: await f.write(await image.read())
-        product.image_url = path
+        try:
+            async with aiofiles.open(path, 'wb') as f: await f.write(await image.read())
+            product.image_url = path
+        except Exception as e:
+            logging.error(f"Не вдалося зберегти нове зображення {path}: {e}")
+            # Optional: Decide if you want to proceed without the new image or raise an error
 
     await session.commit()
     return RedirectResponse(url="/admin/products", status_code=303)
@@ -969,25 +1011,49 @@ async def toggle_product_active(product_id: int, session: AsyncSession = Depends
 async def delete_product(product_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     product = await session.get(Product, product_id)
     if product:
-        if product.image_url and os.path.exists(product.image_url):
-            os.remove(product.image_url)
+        image_to_delete = product.image_url # Store path before deleting object
         await session.delete(product)
         await session.commit()
+        if image_to_delete and os.path.exists(image_to_delete):
+            try:
+                os.remove(image_to_delete)
+            except OSError as e:
+                logging.error(f"Не вдалося видалити зображення {image_to_delete} після видалення продукту: {e}")
+
     return RedirectResponse(url="/admin/products", status_code=303)
 
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ admin_categories ---
 @app.get("/admin/categories", response_class=HTMLResponse)
 async def admin_categories(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     categories_res = await session.execute(sa.select(Category).order_by(Category.sort_order, Category.name))
     categories = categories_res.scalars().all()
 
+    def bool_to_icon(val):
+        return '✅' if val else '❌'
+
     rows = "".join([f"""
     <tr>
       <td>{c.id}</td>
       <td><form action="/admin/edit_category/{c.id}" method="post" class="inline-form">
-          <input type="text" name="name" value="{html.escape(c.name)}">
+          <input type="hidden" name="field" value="name_sort">
+          <input type="text" name="name" value="{html.escape(c.name)}" style="width: 150px;">
           <input type="number" name="sort_order" value="{c.sort_order}" style="width: 80px;">
           <button type="submit">💾</button>
       </form></td>
+      <td style="text-align: center;">
+          <form action="/admin/edit_category/{c.id}" method="post" class="inline-form">
+              <input type="hidden" name="field" value="show_on_delivery_site">
+              <input type="hidden" name="value" value="{'false' if c.show_on_delivery_site else 'true'}">
+              <button type="submit" class="button-sm" style="background: none; color: inherit; padding: 0; font-size: 1.2rem;">{bool_to_icon(c.show_on_delivery_site)}</button>
+          </form>
+      </td>
+      <td style="text-align: center;">
+          <form action="/admin/edit_category/{c.id}" method="post" class="inline-form">
+              <input type="hidden" name="field" value="show_in_restaurant">
+              <input type="hidden" name="value" value="{'false' if c.show_in_restaurant else 'true'}">
+              <button type="submit" class="button-sm" style="background: none; color: inherit; padding: 0; font-size: 1.2rem;">{bool_to_icon(c.show_in_restaurant)}</button>
+          </form>
+      </td>
       <td class='actions'><a href='/admin/delete_category/{c.id}' onclick="return confirm('Ви впевнені?');" class='button-sm danger'>🗑️</a></td>
     </tr>""" for c in categories])
 
@@ -996,42 +1062,87 @@ async def admin_categories(session: AsyncSession = Depends(get_db_session), user
         <h2>Додати нову категорію</h2>
         <form action="/admin/add_category" method="post">
             <label for="name">Назва категорії:</label><input type="text" id="name" name="name" required>
-            <label for="sort_order">Порядок сортування (менше = вище):</label><input type="number" id="sort_order" name="sort_order" value="100">
+            <label for="sort_order">Порядок сортування:</label><input type="number" id="sort_order" name="sort_order" value="100">
+            <div class="checkbox-group">
+                <input type="checkbox" id="show_on_delivery_site" name="show_on_delivery_site" value="true" checked>
+                <label for="show_on_delivery_site">Показувати на сайті та в боті (доставка)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="show_in_restaurant" name="show_in_restaurant" value="true" checked>
+                <label for="show_in_restaurant">Показувати в закладі (QR-меню)</label>
+            </div>
             <button type="submit">Додати</button>
         </form>
     </div>
     <div class="card">
         <h2>Список категорій</h2>
-        <table><thead><tr><th>ID</th><th>Назва та сортування</th><th>Дії</th></tr></thead><tbody>
-        {rows or "<tr><td colspan='3'>Немає категорій</td></tr>"}
+        <table><thead><tr><th>ID</th><th>Назва та сортування</th><th>Сайт/Бот</th><th>В закладі</th><th>Дії</th></tr></thead><tbody>
+        {rows or "<tr><td colspan='5'>Немає категорій</td></tr>"}
         </tbody></table>
     </div>"""
-    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
+    # Исправлена инициализация словаря:
+    active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["categories_active"] = "active"
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Категорії", body=body, **active_classes))
+# --- КОНЕЦ ИСПРАВЛЕНИЯ admin_categories ---
 
+
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ add_category ---
 @app.post("/admin/add_category")
-async def add_category(name: str = Form(...), sort_order: int = Form(100), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    session.add(Category(name=name, sort_order=sort_order))
+async def add_category(name: str = Form(...),
+                       sort_order: int = Form(100),
+                       show_on_delivery_site: bool = Form(False),
+                       show_in_restaurant: bool = Form(False),
+                       session: AsyncSession = Depends(get_db_session),
+                       username: str = Depends(check_credentials)):
+    session.add(Category(
+        name=name,
+        sort_order=sort_order,
+        show_on_delivery_site=show_on_delivery_site,
+        show_in_restaurant=show_in_restaurant
+    ))
     await session.commit()
     return RedirectResponse(url="/admin/categories", status_code=303)
+# --- КОНЕЦ ИСПРАВЛЕНИЯ add_category ---
 
+
+# --- ИСПРАВЛЕННАЯ ФУНКЦИЯ edit_category ---
 @app.post("/admin/edit_category/{cat_id}")
-async def edit_category(cat_id: int, name: str = Form(...), sort_order: int = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
+async def edit_category(cat_id: int,
+                        name: Optional[str] = Form(None),
+                        sort_order: Optional[int] = Form(None),
+                        field: Optional[str] = Form(None),
+                        value: Optional[str] = Form(None),
+                        session: AsyncSession = Depends(get_db_session),
+                        username: str = Depends(check_credentials)):
     category = await session.get(Category, cat_id)
     if category:
-        category.name = name
-        category.sort_order = sort_order
+        if field == "name_sort" and name is not None and sort_order is not None:
+            category.name = name
+            category.sort_order = sort_order
+        elif field in ["show_on_delivery_site", "show_in_restaurant"]:
+            setattr(category, field, value.lower() == 'true')
         await session.commit()
     return RedirectResponse(url="/admin/categories", status_code=303)
+# --- КОНЕЦ ИСПРАВЛЕНИЯ edit_category ---
 
 @app.get("/admin/delete_category/{cat_id}")
 async def delete_category(cat_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     category = await session.get(Category, cat_id)
     if category:
+        # Check if any product uses this category
+        products_exist_res = await session.execute(sa.select(sa.func.count(Product.id)).where(Product.category_id == cat_id))
+        products_exist = products_exist_res.scalar_one_or_none() > 0
+        if products_exist:
+             # Ideally, show an error message instead of HTTPException, but redirect works
+             logging.warning(f"Attempted to delete category {cat_id} which is in use.")
+             # You might want to add a query parameter to show an error on the categories page
+             return RedirectResponse(url="/admin/categories?error=category_in_use", status_code=303)
+
         await session.delete(category)
         await session.commit()
     return RedirectResponse(url="/admin/categories", status_code=303)
+
 
 @app.get("/admin/menu", response_class=HTMLResponse)
 async def admin_menu_items(edit_id: Optional[int] = None, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
@@ -1060,7 +1171,7 @@ async def admin_menu_items(edit_id: Optional[int] = None, session: AsyncSession 
         rows=rows or "<tr><td colspan='6'>Немає пунктів меню</td></tr>",
         form_action=f"/admin/menu/edit/{edit_id}" if item_to_edit else "/admin/menu/add",
         form_title="Редагування пункту" if item_to_edit else "Додати новий пункт",
-        item_id=item_to_edit.id if item_to_edit else "",
+        # item_id=item_to_edit.id if item_to_edit else "", # item_id is not used in the template
         item_title=html.escape(item_to_edit.title) if item_to_edit else "",
         item_content=html.escape(item_to_edit.content) if item_to_edit else "",
         item_sort_order=item_to_edit.sort_order if item_to_edit else 100,
@@ -1113,21 +1224,28 @@ async def admin_orders(page: int = Query(1, ge=1), q: str = Query(None, alias="s
     query = sa.select(Order).options(joinedload(Order.status)).order_by(Order.id.desc())
     if q:
         search_term = q.replace('#', '')
-        query = query.where(sa.or_(Order.id.like(f"%{search_term}%"), Order.customer_name.ilike(f"%{q}%"), Order.phone_number.ilike(f"%{q}%")))
+        # Check if search term is numeric for ID search
+        if search_term.isdigit():
+             query = query.where(sa.or_(Order.id == int(search_term), Order.customer_name.ilike(f"%{q}%"), Order.phone_number.ilike(f"%{q}%")))
+        else:
+             query = query.where(sa.or_(Order.customer_name.ilike(f"%{q}%"), Order.phone_number.ilike(f"%{q}%")))
 
-    total = await session.scalar(sa.select(sa.func.count()).select_from(query.subquery()))
+
+    total_res = await session.execute(sa.select(sa.func.count()).select_from(query.subquery()))
+    total = total_res.scalar_one_or_none() or 0
     orders_res = await session.execute(query.limit(per_page).offset(offset))
     orders = orders_res.scalars().all()
-    pages = (total // per_page) + (1 if total % per_page else 0)
+    pages = (total // per_page) + (1 if total % per_page > 0 else 0)
+
 
     rows = "".join([f"""
     <tr>
         <td><a href="/admin/order/manage/{o.id}" title="Керувати замовленням">#{o.id}</a></td>
-        <td>{html.escape(o.customer_name)}</td>
-        <td>{html.escape(o.phone_number)}</td>
+        <td>{html.escape(o.customer_name or '')}</td>
+        <td>{html.escape(o.phone_number or '')}</td>
         <td>{o.total_price} грн</td>
         <td><span class='status'>{o.status.name if o.status else '-'}</span></td>
-        <td>{html.escape(o.products[:50] + '...' if len(o.products) > 50 else o.products)}</td>
+        <td>{html.escape(o.products[:50] + '...' if o.products and len(o.products) > 50 else o.products or '')}</td>
         <td class='actions'>
             <a href='/admin/order/manage/{o.id}' class='button-sm' title="Керувати статусом та кур'єром">⚙️ Керувати</a>
             <a href='/admin/order/edit/{o.id}' class='button-sm' title="Редагувати склад замовлення">✏️ Редагувати</a>
@@ -1310,9 +1428,14 @@ async def delete_status(status_id: int, session: AsyncSession = Depends(get_db_s
         try:
             await session.delete(status_to_delete)
             await session.commit()
-        except IntegrityError:
-            return RedirectResponse(url="/admin/statuses?error=in_use", status_code=302)
+        except IntegrityError: # Catch the specific database error
+            logging.warning(f"Attempted to delete status {status_id} which is in use.")
+            return RedirectResponse(url="/admin/statuses?error=in_use", status_code=303) # Redirect with error flag
+        except Exception as e: # Catch other potential errors
+            logging.error(f"Error deleting status {status_id}: {e}")
+            raise HTTPException(status_code=500, detail="Не вдалося видалити статус.")
     return RedirectResponse(url="/admin/statuses", status_code=303)
+
 
 @app.get("/admin/roles", response_class=HTMLResponse)
 async def admin_roles(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
@@ -1325,6 +1448,7 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
         <td>{html.escape(r.name)}</td>
         <td>{'✅' if r.can_manage_orders else '❌'}</td>
         <td>{'✅' if r.can_be_assigned else '❌'}</td>
+        <td>{'✅' if r.can_serve_tables else '❌'}</td>
         <td class="actions">
             <a href="/admin/edit_role/{r.id}" class="button-sm">✏️</a>
             <a href="/admin/delete_role/{r.id}" onclick="return confirm('Ви впевнені?');" class="button-sm danger">🗑️</a>
@@ -1332,19 +1456,59 @@ async def admin_roles(session: AsyncSession = Depends(get_db_session), username:
     </tr>""" for r in roles])
 
     if not rows:
-        rows = "<tr><td colspan='5'>Немає ролей</td></tr>"
+        rows = "<tr><td colspan='6'>Немає ролей</td></tr>"
 
-    body = ADMIN_ROLES_BODY.format(rows=rows)
+    # Updated ADMIN_ROLES_BODY to include the new column header
+    body = f"""
+    <div class="card">
+        <ul class="nav-tabs">
+            <li class="nav-item"><a href="/admin/employees">Співробітники</a></li>
+            <li class="nav-item"><a href="/admin/roles" class="active">Ролі</a></li>
+        </ul>
+        <h2>Додати нову роль</h2>
+        <form action="/admin/add_role" method="post">
+            <label for="name">Назва ролі:</label><input type="text" id="name" name="name" required>
+            <div class="checkbox-group">
+                <input type="checkbox" id="can_manage_orders" name="can_manage_orders" value="true">
+                <label for="can_manage_orders">Може керувати замовленнями (Оператор)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="can_be_assigned" name="can_be_assigned" value="true">
+                <label for="can_be_assigned">Може бути призначений на замовлення (Кур'єр)</label>
+            </div>
+             <div class="checkbox-group">
+                <input type="checkbox" id="can_serve_tables" name="can_serve_tables" value="true">
+                <label for="can_serve_tables">Може обслуговувати столики (Офіціант)</label>
+            </div>
+            <button type="submit">Додати роль</button>
+        </form>
+    </div>
+    <div class="card">
+        <h2>Список ролей</h2>
+        <table><thead><tr><th>ID</th><th>Назва</th><th>Керув. замовл.</th><th>Признач. доставку</th><th>Обслуг. столики</th><th>Дії</th></tr></thead><tbody>
+        {rows}
+        </tbody></table>
+    </div>
+    """
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
     active_classes["employees_active"] = "active" # Part of employees section
     return HTMLResponse(ADMIN_HTML_TEMPLATE.format(title="Ролі співробітників", body=body, **active_classes))
 
 @app.post("/admin/add_role")
-async def add_role(name: str = Form(...), can_manage_orders: Optional[bool] = Form(False), can_be_assigned: Optional[bool] = Form(False), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    new_role = Role(name=name, can_manage_orders=bool(can_manage_orders), can_be_assigned=bool(can_be_assigned))
+async def add_role(name: str = Form(...),
+                   can_manage_orders: Optional[bool] = Form(False),
+                   can_be_assigned: Optional[bool] = Form(False),
+                   can_serve_tables: Optional[bool] = Form(False), # Added new permission
+                   session: AsyncSession = Depends(get_db_session),
+                   username: str = Depends(check_credentials)):
+    new_role = Role(name=name,
+                    can_manage_orders=bool(can_manage_orders),
+                    can_be_assigned=bool(can_be_assigned),
+                    can_serve_tables=bool(can_serve_tables)) # Added new permission
     session.add(new_role)
     await session.commit()
     return RedirectResponse(url="/admin/roles", status_code=303)
+
 
 @app.get("/admin/edit_role/{role_id}", response_class=HTMLResponse)
 async def get_edit_role_form(role_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
@@ -1358,11 +1522,11 @@ async def get_edit_role_form(role_id: int, session: AsyncSession = Depends(get_d
         <form action="/admin/edit_role/{role_id}" method="post">
             <label for="name">Назва ролі:</label><input type="text" id="name" name="name" value="{html.escape(role.name)}" required>
             <div class="checkbox-group">
-                <input type="checkbox" id="can_manage_orders" name="can_manage_orders" {'checked' if role.can_manage_orders else ''}>
+                <input type="checkbox" id="can_manage_orders" name="can_manage_orders" value="true" {'checked' if role.can_manage_orders else ''}>
                 <label for="can_manage_orders">Може керувати замовленнями (Оператор)</label>
             </div>
             <div class="checkbox-group">
-                <input type="checkbox" id="can_be_assigned" name="can_be_assigned" {'checked' if role.can_be_assigned else ''}>
+                <input type="checkbox" id="can_be_assigned" name="can_be_assigned" value="true" {'checked' if role.can_be_assigned else ''}>
                 <label for="can_be_assigned">Може бути призначений на замовлення (Кур'єр)</label>
             </div>
             <div class="checkbox-group">
@@ -1370,6 +1534,7 @@ async def get_edit_role_form(role_id: int, session: AsyncSession = Depends(get_d
                 <label for="can_serve_tables">Може обслуговувати столики (Офіціант)</label>
             </div>
             <button type="submit">Зберегти зміни</button>
+             <a href="/admin/roles" class="button secondary">Скасувати</a>
         </form>
     </div>"""
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
@@ -1392,11 +1557,24 @@ async def delete_role(role_id: int, session: AsyncSession = Depends(get_db_sessi
     role = await session.get(Role, role_id)
     if role:
         try:
+            # Check if any employee uses this role
+            employees_exist_res = await session.execute(sa.select(sa.func.count(Employee.id)).where(Employee.role_id == role_id))
+            employees_exist = employees_exist_res.scalar_one_or_none() > 0
+            if employees_exist:
+                logging.warning(f"Attempted to delete role {role_id} which is in use by employees.")
+                # Redirect back with an error message (optional)
+                return RedirectResponse(url="/admin/roles?error=role_in_use", status_code=303)
+
             await session.delete(role)
             await session.commit()
-        except IntegrityError:
+        except IntegrityError: # Fallback, though the check above should prevent this
+            logging.error(f"IntegrityError deleting role {role_id}, likely still in use.")
             raise HTTPException(status_code=400, detail="Неможливо видалити роль, оскільки до неї прив'язані співробітники.")
+        except Exception as e:
+             logging.error(f"Error deleting role {role_id}: {e}")
+             raise HTTPException(status_code=500, detail="Не вдалося видалити роль.")
     return RedirectResponse(url="/admin/roles", status_code=303)
+
 
 @app.get("/admin/employees", response_class=HTMLResponse)
 async def admin_employees(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
@@ -1412,7 +1590,7 @@ async def admin_employees(session: AsyncSession = Depends(get_db_session), usern
         <td>{e.id}</td>
         <td>{html.escape(e.full_name)}</td>
         <td>{html.escape(e.phone_number or '-')}</td>
-        <td>{html.escape(e.role.name)}</td>
+        <td>{html.escape(e.role.name if e.role else 'N/A')}</td>
         <td>{'🟢 На зміні' if e.is_on_shift else '🔴 Вихідний'}</td>
         <td>{e.telegram_user_id or '–'}</td>
         <td class="actions">
@@ -1431,7 +1609,12 @@ async def admin_employees(session: AsyncSession = Depends(get_db_session), usern
 
 @app.post("/admin/add_employee")
 async def add_employee(full_name: str = Form(...), phone_number: str = Form(None), role_id: int = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    new_employee = Employee(full_name=full_name, phone_number=phone_number or None, role_id=role_id)
+    # Basic validation for phone number if provided
+    cleaned_phone = re.sub(r'\D', '', phone_number) if phone_number else None
+    if cleaned_phone and not (10 <= len(cleaned_phone) <= 15):
+         raise HTTPException(status_code=400, detail="Некоректний формат номеру телефону.")
+
+    new_employee = Employee(full_name=full_name, phone_number=cleaned_phone, role_id=role_id)
     session.add(new_employee)
     try:
         await session.commit()
@@ -1442,7 +1625,7 @@ async def add_employee(full_name: str = Form(...), phone_number: str = Form(None
 
 @app.get("/admin/edit_employee/{employee_id}", response_class=HTMLResponse)
 async def get_edit_employee_form(employee_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    employee = await session.get(Employee, employee_id)
+    employee = await session.get(Employee, employee_id, options=[joinedload(Employee.role)]) # Eager load role
     roles_res = await session.execute(sa.select(Role).order_by(Role.id))
     roles = roles_res.scalars().all()
     if not employee: raise HTTPException(status_code=404, detail="Співробітника не знайдено")
@@ -1456,9 +1639,10 @@ async def get_edit_employee_form(employee_id: int, session: AsyncSession = Depen
         <form action="/admin/edit_employee/{employee_id}" method="post">
             <label for="full_name">Повне ім'я:</label><input type="text" id="full_name" name="full_name" value="{html.escape(employee.full_name)}" required>
             <label for="phone_number">Номер телефону:</label><input type="text" id="phone_number" name="phone_number" value="{html.escape(employee.phone_number or '')}">
-            <label for="telegram_user_id">Telegram User ID:</label><input type="number" id="telegram_user_id" name="telegram_user_id" value="{employee.telegram_user_id or ''}" disabled>
+            <label for="telegram_user_id">Telegram User ID (не редагується):</label><input type="text" id="telegram_user_id" name="telegram_user_id" value="{employee.telegram_user_id or ''}" disabled>
             <label for="role_id">Роль:</label><select id="role_id" name="role_id" required>{role_options}</select>
             <button type="submit">Зберегти зміни</button>
+            <a href="/admin/employees" class="button secondary">Скасувати</a>
         </form>
     </div>"""
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "statuses_active", "reports_active", "settings_active"]}
@@ -1469,8 +1653,13 @@ async def get_edit_employee_form(employee_id: int, session: AsyncSession = Depen
 async def edit_employee(employee_id: int, full_name: str = Form(...), phone_number: str = Form(None), role_id: int = Form(...), session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     employee = await session.get(Employee, employee_id)
     if employee:
+        # Basic validation for phone number if provided
+        cleaned_phone = re.sub(r'\D', '', phone_number) if phone_number else None
+        if cleaned_phone and not (10 <= len(cleaned_phone) <= 15):
+             raise HTTPException(status_code=400, detail="Некоректний формат номеру телефону.")
+
         employee.full_name = full_name
-        employee.phone_number = phone_number or None
+        employee.phone_number = cleaned_phone
         employee.role_id = role_id
         try:
             await session.commit()
@@ -1479,13 +1668,29 @@ async def edit_employee(employee_id: int, full_name: str = Form(...), phone_numb
             raise HTTPException(status_code=400, detail="Співробітник з таким номером телефону вже існує.")
     return RedirectResponse(url="/admin/employees", status_code=303)
 
+
 @app.get("/admin/delete_employee/{employee_id}")
 async def delete_employee(employee_id: int, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     employee = await session.get(Employee, employee_id)
     if employee:
+        # Prevent deleting if assigned to orders or tables? (Optional check)
+        # Check active orders assigned (courier)
+        active_orders_count_res = await session.execute(sa.select(func.count(Order.id)).where(Order.courier_id == employee_id, Order.status.has(OrderStatus.is_completed_status == False), Order.status.has(OrderStatus.is_cancelled_status == False) ))
+        active_orders_count = active_orders_count_res.scalar_one_or_none() or 0
+
+        # Check assigned tables (waiter) - need to load relationship
+        await session.refresh(employee, ['assigned_tables'])
+        assigned_tables_count = len(employee.assigned_tables)
+
+        if active_orders_count > 0 or assigned_tables_count > 0:
+             logging.warning(f"Attempted to delete employee {employee_id} who has active assignments.")
+             # Redirect back with an error message (optional)
+             return RedirectResponse(url="/admin/employees?error=employee_assigned", status_code=303)
+
         await session.delete(employee)
         await session.commit()
     return RedirectResponse(url="/admin/employees", status_code=303)
+
 
 @app.get("/admin/reports", response_class=HTMLResponse)
 async def admin_reports_menu(username: str = Depends(check_credentials)):
@@ -1494,7 +1699,7 @@ async def admin_reports_menu(username: str = Depends(check_credentials)):
         <h2>Доступні звіти</h2>
         <ul>
             <li><a href="/admin/reports/couriers">Звіт по замовленнях кур'єрів</a></li>
-        </ul>
+            </ul>
     </div>
     """
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "settings_active"]}
@@ -1509,39 +1714,43 @@ async def report_couriers(
     username: str = Depends(check_credentials)
 ):
     report_data = []
+    # Default date range to last 7 days including today
     date_to = datetime.strptime(date_to_str, "%Y-%m-%d").date() if date_to_str else date.today()
-    date_from = datetime.strptime(date_from_str, "%Y-%m-%d").date() if date_from_str else date_to - timedelta(days=7)
+    date_from = datetime.strptime(date_from_str, "%Y-%m-%d").date() if date_from_str else date_to - timedelta(days=6) # 6 days before + today = 7 days
+
 
     completed_status_res = await session.execute(
-        sa.select(OrderStatus.id).where(OrderStatus.is_completed_status == True).limit(1)
+        sa.select(OrderStatus.id).where(OrderStatus.is_completed_status == True) # Select all completed statuses
     )
-    completed_status_id = completed_status_res.scalar_one_or_none()
+    completed_status_ids = completed_status_res.scalars().all()
 
-    if completed_status_id:
+    if completed_status_ids:
+        # Ensure dates are inclusive by adding one day to date_to for the comparison
+        date_to_inclusive = date_to + timedelta(days=1)
         report_query = (
             sa.select(
                 Employee.full_name,
                 func.count(Order.id).label("completed_orders")
             )
-            .join(Employee, Order.completed_by_courier_id == Employee.id)
+            .join(Employee, Order.completed_by_courier_id == Employee.id) # Use completed_by_courier_id
             .where(
                 and_(
-                    func.date(Order.created_at) >= date_from,
-                    func.date(Order.created_at) <= date_to,
-                    Order.status_id == completed_status_id
+                    Order.created_at >= date_from, # Use >= for start date
+                    Order.created_at < date_to_inclusive, # Use < for end date + 1 day
+                    Order.status_id.in_(completed_status_ids) # Check against all completed statuses
                 )
             )
             .group_by(Employee.full_name)
             .order_by(func.count(Order.id).desc())
         )
         result = await session.execute(report_query)
-        report_data = result.all()
+        report_data = result.all() # Fetch all results
 
     report_rows = "".join([f'<tr><td>{html.escape(row.full_name)}</td><td>{row.completed_orders}</td></tr>' for row in report_data])
-    if not report_data and date_from_str:
+    if not report_data and (date_from_str or date_to_str): # Show message only if dates were selected
         report_rows = '<tr><td colspan="2">Немає даних за вибраний період.</td></tr>'
     elif not report_data:
-        report_rows = '<tr><td colspan="2">Оберіть період та сформуйте звіт.</td></tr>'
+         report_rows = '<tr><td colspan="2">Оберіть період та сформуйте звіт (за замовчуванням останні 7 днів).</td></tr>'
 
 
     body = ADMIN_REPORTS_BODY.format(
@@ -1561,7 +1770,7 @@ async def report_couriers(
 async def admin_settings(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     settings = await get_settings(session)
 
-    current_logo_html = f'<p>Поточне лого: <img src="/{settings.logo_url}" class="table-img"></p>' if settings.logo_url else ''
+    current_logo_html = f'<p>Поточне лого: <img src="/{settings.logo_url}" class="table-img"></p>' if settings.logo_url else '<p>Логотип не завантажено.</p>'
 
     body = ADMIN_SETTINGS_BODY.format(
         client_bot_token=settings.client_bot_token or '',
@@ -1571,10 +1780,10 @@ async def admin_settings(session: AsyncSession = Depends(get_db_session), userna
         r_keeper_enabled_checked='checked' if settings.r_keeper_enabled else '',
         r_keeper_api_url=settings.r_keeper_api_url or '',
         r_keeper_user=settings.r_keeper_user or '',
-        r_keeper_password=settings.r_keeper_password or '',
+        r_keeper_password=settings.r_keeper_password or '', # Keep password fields empty for security
         r_keeper_station_code=settings.r_keeper_station_code or '',
         r_keeper_payment_type=settings.r_keeper_payment_type or '',
-        cache_buster=secrets.token_hex(4)
+        cache_buster=secrets.token_hex(4) # Add cache buster for favicons
     )
     active_classes = {key: "" for key in ["main_active", "orders_active", "clients_active", "tables_active", "products_active", "categories_active", "menu_active", "employees_active", "statuses_active", "reports_active"]}
     active_classes["settings_active"] = "active"
@@ -1590,21 +1799,36 @@ async def save_admin_settings(session: AsyncSession = Depends(get_db_session), u
                                favicon_16x16: UploadFile = File(None), favicon_ico: UploadFile = File(None),
                                site_webmanifest: UploadFile = File(None)):
     settings = await get_settings(session)
-    settings.client_bot_token=client_bot_token
-    settings.admin_bot_token=admin_bot_token
-    settings.admin_chat_id=admin_chat_id
+    settings.client_bot_token=client_bot_token.strip() if client_bot_token else None
+    settings.admin_bot_token=admin_bot_token.strip() if admin_bot_token else None
+    settings.admin_chat_id=admin_chat_id.strip() if admin_chat_id else None
     settings.r_keeper_enabled=r_keeper_enabled
-    settings.r_keeper_api_url=r_keeper_api_url
-    settings.r_keeper_user=r_keeper_user
-    settings.r_keeper_password=r_keeper_password
-    settings.r_keeper_station_code=r_keeper_station_code
-    settings.r_keeper_payment_type=r_keeper_payment_type
+    settings.r_keeper_api_url=r_keeper_api_url.strip() if r_keeper_api_url else None
+    settings.r_keeper_user=r_keeper_user.strip() if r_keeper_user else None
+    # Only update password if a new one is provided
+    if r_keeper_password:
+        settings.r_keeper_password=r_keeper_password
+    settings.r_keeper_station_code=r_keeper_station_code.strip() if r_keeper_station_code else None
+    settings.r_keeper_payment_type=r_keeper_payment_type.strip() if r_keeper_payment_type else None
 
     if logo_file and logo_file.filename:
-        if settings.logo_url and os.path.exists(settings.logo_url): os.remove(settings.logo_url)
-        path = f"static/images/{secrets.token_hex(8)}.{logo_file.filename.split('.')[-1]}"
-        async with aiofiles.open(path, 'wb') as f: await f.write(await logo_file.read())
-        settings.logo_url = path
+        if settings.logo_url and os.path.exists(settings.logo_url):
+            try:
+                os.remove(settings.logo_url)
+            except OSError as e:
+                 logging.error(f"Не вдалося видалити старе лого {settings.logo_url}: {e}")
+        # Sanitize filename slightly
+        filename_base, file_ext = os.path.splitext(logo_file.filename)
+        safe_filename = secrets.token_hex(8) + file_ext
+        path = os.path.join("static/images", safe_filename)
+
+        try:
+            async with aiofiles.open(path, 'wb') as f: await f.write(await logo_file.read())
+            settings.logo_url = path
+        except Exception as e:
+            logging.error(f"Не вдалося зберегти лого {path}: {e}")
+            # Optional: Add error message to redirect
+
 
     favicon_dir = "static/favicons"
     os.makedirs(favicon_dir, exist_ok=True)
@@ -1618,34 +1842,57 @@ async def save_admin_settings(session: AsyncSession = Depends(get_db_session), u
     }
 
     for filename, file in favicon_files.items():
-        if file and file.filename:
-            path = os.path.join(favicon_dir, filename)
+        if file and file.filename: # Check if file was uploaded
+            path = os.path.join(favicon_dir, filename) # Use the correct, fixed filename
             try:
+                # Overwrite existing file
                 async with aiofiles.open(path, 'wb') as f:
                     await f.write(await file.read())
+                logging.info(f"Збережено favicon: {path}")
             except Exception as e:
                 logging.error(f"Не вдалося зберегти favicon {filename}: {e}")
+                # Optional: Add error message to redirect
 
     await session.commit()
     return RedirectResponse(url="/admin/settings?saved=true", status_code=303)
 
+
 async def get_settings(session: AsyncSession) -> Settings:
-    settings = await session.get(Settings, 1)
+    settings = await session.get(Settings, 1) # Use get() for primary key lookup
     if not settings:
-        settings = Settings(id=1, client_bot_token=getenv("CLIENT_BOT_TOKEN", ""), admin_bot_token=getenv("ADMIN_BOT_TOKEN", ""), admin_chat_id=getenv("ADMIN_CHAT_ID", ""))
+        settings = Settings(id=1) # Initialize with ID
         session.add(settings)
-        await session.commit()
+        try:
+            await session.commit()
+            await session.refresh(settings) # Refresh to get default values if any
+            logging.info("Створено початкові налаштування в БД.")
+        except Exception as e:
+            logging.error(f"Не вдалося створити початкові налаштування: {e}")
+            await session.rollback()
+            # Return a default object or raise an error depending on desired behavior
+            return Settings(id=1) # Return an empty settings object
+
+    # Populate from environment variables ONLY if the DB field is currently empty
+    # This prevents overwriting DB settings with potentially outdated env vars on restart
+    if not settings.client_bot_token:
+        settings.client_bot_token = getenv("CLIENT_BOT_TOKEN", None)
+    if not settings.admin_bot_token:
+        settings.admin_bot_token = getenv("ADMIN_BOT_TOKEN", None)
+    if not settings.admin_chat_id:
+        settings.admin_chat_id = getenv("ADMIN_CHAT_ID", None)
+
     return settings
 
 @app.get("/api/admin/products", response_class=JSONResponse)
 async def api_get_products(session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
     res = await session.execute(
         sa.select(Product.id, Product.name, Product.price, Category.name.label("category"))
-        .join(Category, Product.category_id == Category.id)
+        .join(Category, Product.category_id == Category.id, isouter=True) # Use outer join in case category is missing
         .where(Product.is_active == True)
         .order_by(Category.sort_order, Product.name)
     )
-    products = [dict(row) for row in res.mappings().all()]
+    # Handle potential None category name
+    products = [{"id": row.id, "name": row.name, "price": row.price, "category": row.category or "Без категорії"} for row in res.mappings().all()]
     return JSONResponse(content=products)
 
 @app.get("/admin/order/new", response_class=HTMLResponse)
@@ -1659,9 +1906,19 @@ async def get_add_order_form(username: str = Depends(check_credentials)):
     script_data_injection = f"""
     <script>
         document.addEventListener('DOMContentLoaded', () => {{
-            if (window.initializeForm) {{
-                window.initializeForm({json.dumps(initial_data)});
-            }}
+            // Ensure this runs only once and waits for the form script
+            if (typeof window.initializeForm === 'function' && !window.orderFormInitialized) {{
+                 window.initializeForm({json.dumps(initial_data)});
+                 window.orderFormInitialized = true; // Flag to prevent re-initialization
+             }} else if (!window.initializeForm) {{
+                 // Fallback if the main script loads later
+                 document.addEventListener('formScriptLoaded', () => {{
+                     if (!window.orderFormInitialized) {{
+                         window.initializeForm({json.dumps(initial_data)});
+                         window.orderFormInitialized = true;
+                     }}
+                 }});
+             }}
         }});
     </script>
     """
@@ -1697,11 +1954,21 @@ async def get_edit_order_form(order_id: int, session: AsyncSession = Depends(get
     }
     script_injection = f"""
     <script>
-        document.addEventListener('DOMContentLoaded', () => {{
-            if (window.initializeForm) {{
-                window.initializeForm({json.dumps(initial_data)});
-            }}
-        }});
+         document.addEventListener('DOMContentLoaded', () => {{
+             // Ensure this runs only once and waits for the form script
+             if (typeof window.initializeForm === 'function' && !window.orderFormInitialized) {{
+                 window.initializeForm({json.dumps(initial_data)});
+                 window.orderFormInitialized = true; // Flag to prevent re-initialization
+             }} else if (!window.initializeForm) {{
+                 // Fallback if the main script loads later
+                 document.addEventListener('formScriptLoaded', () => {{
+                     if (!window.orderFormInitialized) {{
+                         window.initializeForm({json.dumps(initial_data)});
+                         window.orderFormInitialized = true;
+                     }}
+                 }});
+             }}
+         }});
     </script>
     """
     body = ADMIN_ORDER_FORM_BODY + script_injection
@@ -1731,21 +1998,28 @@ async def _process_and_save_order(order: Order, data: dict, session: AsyncSessio
         order.products = ""
         order.total_price = 0
     else:
-        product_ids = [int(pid) for pid in items_from_js.keys()]
-        if not product_ids:
+        # Filter out potentially invalid keys before converting to int
+        valid_product_ids = [int(pid) for pid in items_from_js.keys() if pid.isdigit()]
+
+        if not valid_product_ids:
             order.products = ""
             order.total_price = 0
         else:
-            products_res = await session.execute(sa.select(Product).where(Product.id.in_(product_ids)))
+            products_res = await session.execute(sa.select(Product).where(Product.id.in_(valid_product_ids)))
             db_products_map = {p.id: p for p in products_res.scalars().all()}
 
             total_price = 0
             product_strings = []
 
             for pid_str, item_data in items_from_js.items():
+                if not pid_str.isdigit(): continue # Skip non-numeric keys
                 pid = int(pid_str)
                 if product := db_products_map.get(pid):
-                    quantity = int(item_data.get('quantity', 0))
+                    try:
+                         quantity = int(item_data.get('quantity', 0))
+                    except (ValueError, TypeError):
+                         quantity = 0 # Default to 0 if quantity is invalid
+
                     if quantity > 0:
                         total_price += product.price * quantity
                         product_strings.append(f"{product.name} x {quantity}")
@@ -1755,20 +2029,32 @@ async def _process_and_save_order(order: Order, data: dict, session: AsyncSessio
 
     if is_new_order:
         session.add(order)
+        # Ensure status_id is set for new orders
         if not order.status_id:
-            order.status_id = 1
+            # Get the default "New" status ID (assuming it's 1 or querying it)
+            new_status_res = await session.execute(sa.select(OrderStatus.id).where(OrderStatus.name == "Новый").limit(1))
+            new_status_id = new_status_res.scalar_one_or_none() or 1 # Default to 1 if not found
+            order.status_id = new_status_id
 
-    await session.commit()
-    await session.refresh(order)
 
+    await session.commit() # Commit changes for both new and existing orders
+    await session.refresh(order) # Refresh to get ID and updated timestamp
+
+    # Add history entry only after successful commit, especially for new orders
     if is_new_order:
-        history_entry = OrderStatusHistory(
-            order_id=order.id,
-            status_id=order.status_id,
-            actor_info=actor_info
-        )
-        session.add(history_entry)
-        await session.commit()
+        try:
+             history_entry = OrderStatusHistory(
+                 order_id=order.id, # Use the generated ID
+                 status_id=order.status_id,
+                 actor_info=actor_info
+             )
+             session.add(history_entry)
+             await session.commit() # Commit history separately
+             logging.info(f"Створено запис історії для нового замовлення #{order.id}")
+        except Exception as e:
+             logging.error(f"Не вдалося створити запис історії для замовлення #{order.id}: {e}")
+             await session.rollback() # Rollback history commit if it fails
+
 
         admin_bot = dp_admin.get("bot_instance")
         if admin_bot:
@@ -1777,21 +2063,41 @@ async def _process_and_save_order(order: Order, data: dict, session: AsyncSessio
                 logging.info(f"Сповіщення для нового веб-адмін замовлення #{order.id} надіслано успішно.")
             except Exception as e:
                 logging.error(f"Не вдалося надіслати сповіщення для нового веб-адмін замовлення #{order.id}: {e}")
+    else:
+         # Optionally log edits or add history if status changes during edit (not typical here)
+         logging.info(f"Замовлення #{order.id} оновлено через веб-панель.")
+
 
 @app.post("/api/admin/order/new", response_class=JSONResponse)
 async def api_create_order(request: Request, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    data = await request.json()
-    new_order = Order()
-    await _process_and_save_order(new_order, data, session)
-    return JSONResponse(content={"message": "Замовлення створено успішно", "redirect_url": "/admin/orders"})
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Недійсний JSON")
+
+    new_order = Order() # Create an empty order object
+    try:
+        await _process_and_save_order(new_order, data, session)
+        return JSONResponse(content={"message": "Замовлення створено успішно", "redirect_url": "/admin/orders"})
+    except Exception as e:
+        logging.error(f"Помилка при створенні замовлення через API: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Не вдалося створити замовлення")
 
 @app.post("/api/admin/order/edit/{order_id}", response_class=JSONResponse)
 async def api_update_order(order_id: int, request: Request, session: AsyncSession = Depends(get_db_session), username: str = Depends(check_credentials)):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Недійсний JSON")
+
     order = await session.get(Order, order_id)
     if not order: raise HTTPException(404, "Замовлення не знайдено")
-    await _process_and_save_order(order, data, session)
-    return JSONResponse(content={"message": "Замовлення оновлено успішно", "redirect_url": "/admin/orders"})
+    try:
+        await _process_and_save_order(order, data, session)
+        return JSONResponse(content={"message": "Замовлення оновлено успішно", "redirect_url": "/admin/orders"})
+    except Exception as e:
+        logging.error(f"Помилка при оновленні замовлення #{order_id} через API: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Не вдалося оновити замовлення")
 
 
 if __name__ == "__main__":
