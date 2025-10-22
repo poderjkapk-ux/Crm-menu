@@ -23,6 +23,16 @@ async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit
 class Base(DeclarativeBase):
     pass
 
+# НОВА ТАБЛИЦЯ: Асоціативна таблиця для зв'язку "багато-до-багатьох"
+# між офіціантами (Employee) та столиками (Table)
+waiter_table_association = sa.Table(
+    'waiter_table_association',
+    Base.metadata,
+    sa.Column('employee_id', sa.ForeignKey('employees.id'), primary_key=True),
+    sa.Column('table_id', sa.ForeignKey('tables.id'), primary_key=True)
+)
+
+
 # Модель для хранения пунктов меню (страниц)
 class MenuItem(Base):
     __tablename__ = 'menu_items'
@@ -55,8 +65,16 @@ class Employee(Base):
     is_on_shift: Mapped[bool] = mapped_column(sa.Boolean, default=False, server_default=text("0"), nullable=False)
     current_order_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('orders.id', ondelete="SET NULL"), nullable=True)
     current_order: Mapped[Optional["Order"]] = relationship("Order", foreign_keys="Employee.current_order_id")
-    # Связь с назначенными столиками
-    assigned_tables: Mapped[List["Table"]] = relationship("Table", back_populates="assigned_waiter")
+    
+    # ЗМІНЕНО: 'assigned_tables' тепер використовує M2M
+    assigned_tables: Mapped[List["Table"]] = relationship(
+        "Table",
+        secondary=waiter_table_association,
+        back_populates="assigned_waiters"
+    )
+    
+    # НОВИЙ ЗВ'ЯЗОК: Замовлення, прийняті цим офіціантом
+    accepted_orders: Mapped[List["Order"]] = relationship("Order", back_populates="accepted_by_waiter", foreign_keys="Order.accepted_by_waiter_id")
 
 
 class Category(Base):
@@ -122,6 +140,10 @@ class Order(Base):
     table: Mapped[Optional["Table"]] = relationship("Table", back_populates="orders")
     order_type: Mapped[str] = mapped_column(sa.String(20), default='delivery', server_default='delivery', nullable=False) # "delivery", "pickup", "in_house"
 
+    # НОВЕ ПОЛЕ: Хто з офіціантів прийняв замовлення
+    accepted_by_waiter_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id'), nullable=True)
+    accepted_by_waiter: Mapped[Optional["Employee"]] = relationship("Employee", back_populates="accepted_orders", foreign_keys="Order.accepted_by_waiter_id")
+
 
 # НОВАЯ ТАБЛИЦА ДЛЯ ИСТОРИИ СТАТУСОВ
 class OrderStatusHistory(Base):
@@ -157,9 +179,18 @@ class Table(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True)
     qr_code_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
-    assigned_waiter_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id', ondelete="SET NULL"), nullable=True)
     
-    assigned_waiter: Mapped[Optional["Employee"]] = relationship("Employee", back_populates="assigned_tables")
+    # ВИДАЛЕНО: Старий зв'язок "один-до-одного"
+    # assigned_waiter_id: Mapped[Optional[int]] = mapped_column(sa.ForeignKey('employees.id', ondelete="SET NULL"), nullable=True)
+    # assigned_waiter: Mapped[Optional["Employee"]] = relationship("Employee", back_populates="assigned_tables")
+    
+    # НОВИЙ ЗВ'ЯЗОК: "багато-до-багатьох"
+    assigned_waiters: Mapped[List["Employee"]] = relationship(
+        "Employee",
+        secondary=waiter_table_association,
+        back_populates="assigned_tables"
+    )
+
     orders: Mapped[List["Order"]] = relationship("Order", back_populates="table")
 
 
