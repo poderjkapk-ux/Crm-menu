@@ -131,15 +131,29 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
 async def show_waiter_tables(message_or_callback: Message | CallbackQuery, session: AsyncSession):
     is_callback = isinstance(message_or_callback, CallbackQuery)
     message = message_or_callback.message if is_callback else message_or_callback
+    # --- ВИПРАВЛЕНО 1: Отримуємо user_id з правильного об'єкта ---
+    user_id = message_or_callback.from_user.id
     
     employee = await session.scalar(
-        select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
+        # --- ВИПРАВЛЕНО 2: Використовуємо правильний user_id ---
+        select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role))
     )
+    
+    # --- ВИПРАВЛЕНО 3: Краща обробка помилок для callback ---
     if not employee or not employee.role.can_serve_tables:
-        return await message.answer("❌ У вас немає прав офіціанта.")
+        if is_callback:
+            await message_or_callback.answer("❌ У вас немає прав офіціанта.", show_alert=True)
+            return
+        else:
+            return await message.answer("❌ У вас немає прав офіціанта.")
 
     if not employee.is_on_shift:
-        return await message.answer("🔴 Ви не на зміні. Почніть зміну, щоб побачити свої столики.")
+        text_off_shift = "🔴 Ви не на зміні. Почніть зміну, щоб побачити свої столики."
+        if is_callback:
+            await message_or_callback.answer(text_off_shift, show_alert=True)
+            return
+        else:
+            return await message.answer(text_off_shift)
 
     # ЗМІНЕНО: Логіка запиту M2M
     tables_res = await session.execute(
@@ -162,6 +176,8 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
         except TelegramBadRequest: # If message is photo or something else
             await message.delete()
             await message.answer(text, reply_markup=kb.as_markup())
+        # --- ВИПРАВЛЕНО 4: Додаємо answer() для закриття "годинника" у клієнта ---
+        await message_or_callback.answer()
     else:
         await message.answer(text, reply_markup=kb.as_markup())
 
