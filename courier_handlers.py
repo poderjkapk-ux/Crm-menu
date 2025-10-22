@@ -206,6 +206,46 @@ async def start_handler(message: Message, state: FSMContext, session: AsyncSessi
         await message.answer("👋 Ласкаво просимо! Використовуйте цей бот для управління замовленнями.",
                              reply_markup=get_staff_login_keyboard())
 
+# --- ПОЧАТОК ЗМІН: Функція _generate_waiter_order_view переміщена сюди ---
+# (Раніше вона була всередині register_courier_handlers)
+async def _generate_waiter_order_view(order: Order, session: AsyncSession):
+    await session.refresh(order, ['status', 'accepted_by_waiter', 'table']) # Додано 'table'
+    status_name = order.status.name if order.status else 'Невідомий'
+    products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
+    
+    if order.accepted_by_waiter:
+        accepted_by_text = f"<b>Прийнято:</b> {html_module.escape(order.accepted_by_waiter.full_name)}\n\n"
+    else:
+        accepted_by_text = "<b>Прийнято:</b> <i>Очікує...</i>\n\n"
+    
+    table_name = order.table.name if order.table else "N/A" # Отримуємо ім'я столика
+
+    text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {table_name})\n\n"
+            f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
+            f"{accepted_by_text}"
+            f"<b>Поточний статус:</b> {status_name}")
+
+    kb = InlineKeyboardBuilder()
+    
+    if not order.accepted_by_waiter_id:
+        kb.row(InlineKeyboardButton(text="✅ Прийняти це замовлення", callback_data=f"waiter_accept_order_{order.id}"))
+
+    statuses_res = await session.execute(
+        select(OrderStatus).where(OrderStatus.visible_to_waiter == True).order_by(OrderStatus.id)
+    )
+    statuses = statuses_res.scalars().all()
+    status_buttons = [
+        InlineKeyboardButton(text=f"{'✅ ' if s.id == order.status_id else ''}{s.name}", callback_data=f"staff_set_status_{order.id}_{s.id}")
+        for s in statuses
+    ]
+    for i in range(0, len(status_buttons), 2):
+        kb.row(*status_buttons[i:i+2])
+
+    kb.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}"))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад до столика", callback_data=f"waiter_view_table_{order.table_id}"))
+    
+    return text, kb.as_markup()
+# --- КІНЕЦЬ ЗМІН ---
 
 def register_courier_handlers(dp_admin: Dispatcher):
     dp_admin.message.register(start_handler, CommandStart())
@@ -297,8 +337,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
             if employee.role.can_be_assigned:
                  employee.current_order_id = None
             if employee.role.can_serve_tables:
-                # employee.assigned_tables.clear() # НЕПРАВИЛЬНО: Вихід з системи не повинен скасовувати призначення.
-                pass
+            # employee.assigned_tables.clear() # НЕПРАВИЛЬНО: Вихід з системи не повинен скасовувати призначення.
+            pass
 
             await session.commit()
             await message.answer("👋 Ви вийшли з системи.", reply_markup=get_staff_login_keyboard())
@@ -395,7 +435,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         await callback.answer(alert_text)
         
         if order.order_type == "in_house":
-            await manage_in_house_order_handler(callback, session, order_id=order_id)
+            await manage_in_house_order_handler(callback, session, order_id=order.id)
         else:
             await show_courier_orders(callback, session)
             
@@ -445,41 +485,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
         order_id = int(callback.data.split("_")[-1])
         await manage_in_house_order_handler(callback, session, order_id=order_id)
         
-    async def _generate_waiter_order_view(order: Order, session: AsyncSession):
-        await session.refresh(order, ['status', 'accepted_by_waiter'])
-        status_name = order.status.name if order.status else 'Невідомий'
-        products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
-        
-        if order.accepted_by_waiter:
-            accepted_by_text = f"<b>Прийнято:</b> {html_module.escape(order.accepted_by_waiter.full_name)}\n\n"
-        else:
-            accepted_by_text = "<b>Прийнято:</b> <i>Очікує...</i>\n\n"
-
-        text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {order.table.name})\n\n"
-                f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
-                f"{accepted_by_text}"
-                f"<b>Поточний статус:</b> {status_name}")
-
-        kb = InlineKeyboardBuilder()
-        
-        if not order.accepted_by_waiter_id:
-            kb.row(InlineKeyboardButton(text="✅ Прийняти це замовлення", callback_data=f"waiter_accept_order_{order.id}"))
-
-        statuses_res = await session.execute(
-            select(OrderStatus).where(OrderStatus.visible_to_waiter == True).order_by(OrderStatus.id)
-        )
-        statuses = statuses_res.scalars().all()
-        status_buttons = [
-            InlineKeyboardButton(text=f"{'✅ ' if s.id == order.status_id else ''}{s.name}", callback_data=f"staff_set_status_{order.id}_{s.id}")
-            for s in statuses
-        ]
-        for i in range(0, len(status_buttons), 2):
-            kb.row(*status_buttons[i:i+2])
-
-        kb.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}")) # TODO: This refers to admin_handlers FSM
-        kb.row(InlineKeyboardButton(text="⬅️ Назад до столика", callback_data=f"waiter_view_table_{order.table_id}"))
-        
-        return text, kb.as_markup()
 
     @dp_admin.callback_query(F.data.startswith("waiter_manage_order_"))
     async def manage_in_house_order_handler(callback: CallbackQuery, session: AsyncSession, order_id: int = None):
@@ -490,7 +495,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if not order:
             return await callback.answer("Замовлення не знайдено", show_alert=True)
 
-        text, keyboard = await _generate_waiter_order_view(order, session)
+        # ВИКОРИСТАННЯ ГЛОБАЛЬНОЇ ФУНКЦІЇ
+        text, keyboard = await _generate_waiter_order_view(order, session) 
         
         try:
             await callback.message.edit_text(text, reply_markup=keyboard)
