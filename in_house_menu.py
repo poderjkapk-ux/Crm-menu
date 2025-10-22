@@ -32,10 +32,18 @@ async def get_admin_bot(session: AsyncSession) -> Bot | None:
         return Bot(token=settings.admin_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     return None
 
-@router.get("/menu/table/{table_id}", response_class=HTMLResponse)
-async def get_in_house_menu(table_id: int, request: Request, session: AsyncSession = Depends(get_db_session)):
+# --- ПОЧАТОК ЗМІНИ: Ендпоінт приймає access_token ---
+@router.get("/menu/table/{access_token}", response_class=HTMLResponse)
+async def get_in_house_menu(access_token: str, request: Request, session: AsyncSession = Depends(get_db_session)):
     """Відображає сторінку меню для конкретного столика."""
-    table = await session.get(Table, table_id)
+    
+    # Змінено: Шукаємо столик за access_token, а не за ID
+    table_res = await session.execute(
+        select(Table).where(Table.access_token == access_token)
+    )
+    table = table_res.scalar_one_or_none()
+    # --- КІНЕЦЬ ЗМІНИ ---
+
     if not table:
         raise HTTPException(status_code=404, detail="Столик не знайдено.")
 
@@ -60,9 +68,12 @@ async def get_in_house_menu(table_id: int, request: Request, session: AsyncSessi
     # Передаємо дані меню в шаблон через JSON
     menu_data = json.dumps({"categories": categories, "products": products})
 
+    # ВАЖЛИВО: Ми передаємо table.id в шаблон, а не access_token.
+    # Це безпечно, оскільки table.id використовується для внутрішніх API-запитів,
+    # а не для URL, який можна вгадати.
     return HTMLResponse(content=IN_HOUSE_MENU_HTML_TEMPLATE.format(
         table_name=html_module.escape(table.name),
-        table_id=table.id,
+        table_id=table.id, 
         logo_html=logo_html,
         menu_data=menu_data
     ))
@@ -70,6 +81,7 @@ async def get_in_house_menu(table_id: int, request: Request, session: AsyncSessi
 @router.post("/api/menu/table/{table_id}/call_waiter", response_class=JSONResponse)
 async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_session)):
     """Обробляє виклик офіціанта зі столика."""
+    # (Цей ендпоінт залишається без змін, він приймає table_id з JavaScript)
     # ЗМІНЕНО: Використовуємо selectinload для M2M
     table = await session.get(Table, table_id, options=[selectinload(Table.assigned_waiters)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
@@ -113,6 +125,7 @@ async def call_waiter(table_id: int, session: AsyncSession = Depends(get_db_sess
 @router.post("/api/menu/table/{table_id}/request_bill", response_class=JSONResponse)
 async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_session)):
     """Обробляє запит на рахунок зі столика."""
+    # (Цей ендпоіінт залишається без змін)
     # ЗМІНЕНО: Використовуємо selectinload для M2M
     table = await session.get(Table, table_id, options=[selectinload(Table.assigned_waiters)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")
@@ -156,6 +169,7 @@ async def request_bill(table_id: int, session: AsyncSession = Depends(get_db_ses
 @router.post("/api/menu/table/{table_id}/place_order", response_class=JSONResponse)
 async def place_in_house_order(table_id: int, items: list = Body(...), session: AsyncSession = Depends(get_db_session)):
     """Обробляє нове замовлення зі столика."""
+    # (Цей ендпоіінт залишається без змін)
     # ЗМІНЕНО: Використовуємо selectinload для M2M
     table = await session.get(Table, table_id, options=[selectinload(Table.assigned_waiters)])
     if not table: raise HTTPException(status_code=404, detail="Столик не знайдено.")

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import event, text, func, ForeignKey
 from typing import Optional, List
 from datetime import datetime
+import secrets  # <-- ДОДАНО ІМПОРТ
 
 DATABASE_URL = "sqlite+aiosqlite:///./shop.db"
 engine = create_async_engine(DATABASE_URL)
@@ -178,6 +179,18 @@ class Table(Base):
     __tablename__ = 'tables'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(sa.String(100), nullable=False, unique=True)
+    
+    # --- ПОЧАТОК ЗМІНИ ---
+    # Додаємо унікальний токен для URL, який важко вгадати
+    access_token: Mapped[str] = mapped_column(
+        sa.String(32), 
+        default=lambda: secrets.token_urlsafe(16),  # Генерує випадковий URL-безпечний рядок
+        nullable=False, 
+        unique=True, 
+        index=True  # Індекс для швидкого пошуку
+    )
+    # --- КІНЕЦЬ ЗМІНИ ---
+    
     qr_code_url: Mapped[Optional[str]] = mapped_column(sa.String(255), nullable=True)
     
     # ВИДАЛЕНО: Старий зв'язок "один-до-одного"

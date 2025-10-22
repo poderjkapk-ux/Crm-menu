@@ -62,7 +62,8 @@ async def admin_tables_list(
         <tr>
             <td>{table.id}</td>
             <td>{html.escape(table.name)}</td>
-            <td><a href="/qr/{table.id}" target="_blank"><img src="/qr/{table.id}" alt="QR Code" class="qr-code-img"></a></td>
+            
+            <td><a href="/menu/table/{table.access_token}" target="_blank"><img src="/qr/{table.access_token}" alt="QR Code" class="qr-code-img"></a></td>
             <td>{waiter_names}</td>
             <td class="actions">
                 <button class="button-sm" onclick='openAssignWaiterModal({table.id}, "{html.escape(table.name)}", {waiters_json}, {assigned_waiter_ids})'>👤 Призначити</button>
@@ -85,6 +86,7 @@ async def add_table(
     username: str = Depends(check_credentials)
 ):
     """Додає новий столик."""
+    # access_token згенерується автоматично завдяки default= у моделі
     new_table = Table(name=name)
     session.add(new_table)
     await session.commit()
@@ -149,11 +151,16 @@ async def assign_waiter_to_table(
     return RedirectResponse(url="/admin/tables", status_code=303)
 
 
-@router.get("/qr/{table_id}")
-async def get_qr_code(request: Request, table_id: int):
+# --- ПОЧАТОК ЗМІНИ: Ендпоінт тепер приймає access_token ---
+@router.get("/qr/{access_token}")
+async def get_qr_code(request: Request, access_token: str):
+# --- КІНЕЦЬ ЗМІНИ ---
     """Генерує та повертає QR-код для столика."""
     base_url = str(request.base_url)
-    url = f"{base_url}menu/table/{table_id}"
+    
+    # --- ПОЧАТОК ЗМІНИ: URL тепер використовує access_token ---
+    url = f"{base_url}menu/table/{access_token}"
+    # --- КІНЕЦЬ ЗМІНИ ---
     
     img = qrcode.make(url)
     buf = io.BytesIO()
