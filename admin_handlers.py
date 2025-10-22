@@ -16,7 +16,9 @@ from urllib.parse import quote_plus
 import re # <--- ДОДАНО
 
 from models import Order, Product, Category, OrderStatus, Employee, Role, Settings, OrderStatusHistory
-from courier_handlers import get_operator_keyboard, get_staff_login_keyboard, get_courier_keyboard
+# --- ПОЧАТОК ЗМІН: Додано _generate_waiter_order_view ---
+from courier_handlers import get_operator_keyboard, get_staff_login_keyboard, get_courier_keyboard, _generate_waiter_order_view
+# --- КІНЕЦЬ ЗМІН ---
 from notification_manager import notify_all_parties_on_status_change
 
 # Налаштування логування
@@ -248,11 +250,35 @@ def register_admin_handlers(dp: Dispatcher):
         await callback.message.edit_text(f"📝 <b>Редагування замовлення #{order_id}</b>\nВиберіть, що хочете змінити:", reply_markup=kb.as_markup())
         await callback.answer()
 
+    # --- ПОЧАТОК ЗМІН: Оновлений обробник back_to_order_view ---
     @dp.callback_query(F.data.startswith("view_order_"))
     async def back_to_order_view(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[2])
-        await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
-        await callback.answer()
+        
+        # Завантажуємо замовлення, щоб перевірити його тип
+        order = await session.get(Order, order_id, options=[joinedload(Order.table)])
+        if not order:
+            return await callback.answer("Помилка: Замовлення не знайдено.", show_alert=True)
+
+        if order.order_type == "in_house":
+            # Це замовлення офіціанта, викликаємо представлення офіціанта
+            text, keyboard = await _generate_waiter_order_view(order, session)
+            try:
+                await callback.message.edit_text(text, reply_markup=keyboard)
+            except TelegramBadRequest as e:
+                logger.warning(f"Error in back_to_order_view (waiter): {e}. Sending new message.")
+                # Якщо повідомлення не можна відредагувати (наприклад, воно без тексту), видаляємо старе і надсилаємо нове
+                try:
+                    await callback.message.delete()
+                    await callback.message.answer(text, reply_markup=keyboard)
+                except Exception as del_e:
+                     logger.error(f"Failed to send replacement message in back_to_order_view: {del_e}")
+            await callback.answer()
+        else:
+            # Це замовлення на доставку/самовивіз, викликаємо звичайне адмін-представлення
+            await _display_order_view(callback.bot, callback.message.chat.id, callback.message.message_id, order_id, session)
+            await callback.answer()
+    # --- КІНЕЦЬ ЗМІН ---
 
     @dp.callback_query(F.data.startswith("edit_customer_"))
     async def edit_customer_menu_handler(callback: CallbackQuery, session: AsyncSession):
