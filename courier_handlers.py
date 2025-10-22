@@ -16,6 +16,7 @@ from typing import Dict, Any
 from urllib.parse import quote_plus
 import re 
 
+# ЗМІНЕНО: Додано OrderStatusHistory, Table
 from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table
 from notification_manager import notify_all_parties_on_status_change
 
@@ -140,8 +141,9 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
     if not employee.is_on_shift:
         return await message.answer("🔴 Ви не на зміні. Почніть зміну, щоб побачити свої столики.")
 
+    # ЗМІНЕНО: Логіка запиту M2M
     tables_res = await session.execute(
-        select(Table).where(Table.assigned_waiter_id == employee.id).order_by(Table.name)
+        select(Table).where(Table.assigned_waiters.any(Employee.id == employee.id)).order_by(Table.name)
     )
     tables = tables_res.scalars().all()
 
@@ -259,16 +261,19 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
     @dp_admin.message(F.text == "🚪 Вийти")
     async def logout_handler(message: Message, session: AsyncSession):
-        employee = await session.scalar(select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role)))
+        # ЗМІНЕНО: Додано joinedload(Employee.assigned_tables)
+        employee = await session.scalar(
+            select(Employee).where(Employee.telegram_user_id == message.from_user.id)
+            .options(joinedload(Employee.role), joinedload(Employee.assigned_tables))
+        )
         if employee:
             employee.telegram_user_id = None
             employee.is_on_shift = False
             if employee.role.can_be_assigned:
                  employee.current_order_id = None
             if employee.role.can_serve_tables:
-                tables_to_unassign = await session.scalars(select(Table).where(Table.assigned_waiter_id == employee.id))
-                for table in tables_to_unassign.all():
-                    table.assigned_waiter_id = None
+                # ЗМІНЕНО: Очищуємо список M2M
+                employee.assigned_tables.clear()
 
             await session.commit()
             await message.answer("👋 Ви вийшли з системи.", reply_markup=get_staff_login_keyboard())
@@ -416,15 +421,29 @@ def register_courier_handlers(dp_admin: Dispatcher):
     # NEW: Handler and view generator for full order management by waiter
     async def _generate_waiter_order_view(order: Order, session: AsyncSession):
         """Генерує текст і клавіатуру для управління замовленням офіціантом."""
-        await session.refresh(order, ['status'])
+        # ЗМІНЕНО: Оновлюємо зв'язки
+        await session.refresh(order, ['status', 'accepted_by_waiter'])
         status_name = order.status.name if order.status else 'Невідомий'
         products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
+        
+        # ЗМІНЕНО: Додаємо, хто прийняв замовлення
+        if order.accepted_by_waiter:
+            accepted_by_text = f"<b>Прийнято:</b> {html_module.escape(order.accepted_by_waiter.full_name)}\n\n"
+        else:
+            accepted_by_text = "<b>Прийнято:</b> <i>Очікує...</i>\n\n"
+
 
         text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {order.table.name})\n\n"
                 f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
+                f"{accepted_by_text}"
                 f"<b>Поточний статус:</b> {status_name}")
 
         kb = InlineKeyboardBuilder()
+        
+        # НОВА ЛОГІКА: Якщо замовлення ще ніким не прийнято, показуємо кнопку "Прийняти"
+        if not order.accepted_by_waiter_id:
+            kb.row(InlineKeyboardButton(text="✅ Прийняти це замовлення", callback_data=f"waiter_accept_order_{order.id}"))
+
         statuses_res = await session.execute(
             select(OrderStatus).where(OrderStatus.visible_to_waiter == True).order_by(OrderStatus.id)
         )
@@ -446,7 +465,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if not order_id:
             order_id = int(callback.data.split("_")[-1])
 
-        order = await session.get(Order, order_id, options=[joinedload(Order.table), joinedload(Order.status)])
+        # ЗМІНЕНО: Додаємо joinedload(Order.accepted_by_waiter)
+        order = await session.get(Order, order_id, options=[joinedload(Order.table), joinedload(Order.status), joinedload(Order.accepted_by_waiter)])
         if not order:
             return await callback.answer("Замовлення не знайдено", show_alert=True)
 
@@ -463,3 +483,96 @@ def register_courier_handlers(dp_admin: Dispatcher):
                 await callback.message.answer(text, reply_markup=keyboard)
 
         await callback.answer()
+
+    # НОВИЙ ОБРОБНИК для прийняття замовлення
+    @dp_admin.callback_query(F.data.startswith("waiter_accept_order_"))
+    async def waiter_accept_order(callback: CallbackQuery, session: AsyncSession):
+        order_id = int(callback.data.split("_")[-1])
+        
+        employee = await session.scalar(
+            select(Employee).where(Employee.telegram_user_id == callback.from_user.id)
+        )
+        if not employee:
+            return await callback.answer("Вас не знайдено в системі.", show_alert=True)
+
+        order = await session.get(
+            Order, 
+            order_id, 
+            options=[
+                joinedload(Order.table).joinedload(Table.assigned_waiters),
+                joinedload(Order.status)
+            ]
+        )
+
+        if not order:
+            await callback.answer("Замовлення не знайдено.", show_alert=True)
+            try: await callback.message.delete()
+            except TelegramBadRequest: pass
+            return
+
+        if order.accepted_by_waiter_id:
+            await callback.answer("Це замовлення вже прийнято іншим офіціантом.", show_alert=True)
+            # Оновлюємо вигляд, щоб показати, ХТО прийняв
+            await manage_in_house_order_handler(callback, session, order_id=order_id)
+            return
+
+        # Приймаємо замовлення
+        order.accepted_by_waiter_id = employee.id
+        old_status_name = order.status.name
+        
+        # Опціонально: автоматично змінюємо статус на "В обробці"
+        processing_status = None
+        try:
+            processing_status = await session.scalar(select(OrderStatus).where(OrderStatus.name == "В обробці").limit(1))
+            if processing_status:
+                order.status_id = processing_status.id
+                session.add(OrderStatusHistory(
+                    order_id=order.id, 
+                    status_id=processing_status.id, 
+                    actor_info=f"Офіціант (прийняв): {employee.full_name}"
+                ))
+        except Exception as e:
+            logger.error(f"Не вдалося автоматично змінити статус для замовлення #{order_id}: {e}")
+
+        await session.commit()
+        await callback.answer(f"Ви прийняли замовлення #{order_id}!", show_alert=False)
+
+        # Редагуємо поточне повідомлення (показуємо оновлений вигляд)
+        await manage_in_house_order_handler(callback, session, order_id=order_id)
+
+        # Сповіщаємо інших офіціантів цього столика та адмін-чат
+        notification_text = (
+            f"ℹ️ Замовлення #{order.id} (Стіл: {html.escape(order.table.name)}) "
+            f"було прийнято офіціантом: <b>{html.escape(employee.full_name)}</b>"
+        )
+        
+        target_chat_ids = set()
+        # Інші офіціанти
+        for w in order.table.assigned_waiters:
+            if w.telegram_user_id and w.is_on_shift and w.id != employee.id:
+                target_chat_ids.add(w.telegram_user_id)
+        
+        # Адмін-чат
+        settings = await session.get(Settings, 1)
+        if settings and settings.admin_chat_id:
+            try:
+                target_chat_ids.add(int(settings.admin_chat_id))
+            except ValueError:
+                logger.warning(f"Некоректний admin_chat_id: {settings.admin_chat_id}")
+            
+        for chat_id in target_chat_ids:
+            try:
+                # Надсилаємо сповіщення про те, ХТО прийняв
+                await callback.bot.send_message(chat_id, notification_text)
+                
+            except Exception as e:
+                logger.error(f"Не вдалося сповістити {chat_id} про прийняття замовлення #{order_id}: {e}")
+
+        # Також відправляємо клієнту, якщо статус змінився
+        if processing_status and processing_status.notify_customer and order.user_id:
+            client_bot = dp_admin.get("client_bot")
+            if client_bot:
+                try:
+                    await client_bot.send_message(order.user_id, f"Ваше замовлення #{order.id} прийнято в обробку.")
+                except Exception as e:
+                    logger.error(f"Не вдалося сповістити клієнта {order.user_id} про прийняття замовлення: {e}")
