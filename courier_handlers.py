@@ -16,14 +16,25 @@ from typing import Dict, Any
 from urllib.parse import quote_plus
 import re 
 
-# ЗМІНЕНО: Додано OrderStatusHistory, Table
-from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table
+# ЗМІНЕНО: Додано OrderStatusHistory, Table, Category, Product
+from models import Employee, Order, OrderStatus, Settings, OrderStatusHistory, Table, Category, Product
 from notification_manager import notify_all_parties_on_status_change
+
+# НОВІ ІМПОРТИ
+from aiogram import html as aiogram_html
+from aiogram.utils.keyboard import InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
 class StaffAuthStates(StatesGroup):
     waiting_for_phone = State()
+
+# НОВА МАШИНА СТАНІВ (FSM) ДЛЯ СТВОРЕННЯ ЗАМОВЛЕННЯ
+class WaiterCreateOrderStates(StatesGroup):
+    managing_cart = State()
+    choosing_category = State()
+    choosing_product = State()
+
 
 def get_staff_login_keyboard():
     builder = ReplyKeyboardBuilder()
@@ -128,18 +139,19 @@ async def show_courier_orders(message_or_callback: Message | CallbackQuery, sess
              logger.error(f"Error in show_courier_orders: {e}")
              await message.answer(text, reply_markup=kb.as_markup())
 
-async def show_waiter_tables(message_or_callback: Message | CallbackQuery, session: AsyncSession):
+async def show_waiter_tables(message_or_callback: Message | CallbackQuery, session: AsyncSession, state: FSMContext):
+    # ДОДАНО: state: FSMContext
     is_callback = isinstance(message_or_callback, CallbackQuery)
     message = message_or_callback.message if is_callback else message_or_callback
-    # --- ВИПРАВЛЕНО 1: Отримуємо user_id з правильного об'єкта ---
     user_id = message_or_callback.from_user.id
     
+    # ДОДАНО: Очищуємо стан FSM (на випадок скасування створення замовлення)
+    await state.clear()
+    
     employee = await session.scalar(
-        # --- ВИПРАВЛЕНО 2: Використовуємо правильний user_id ---
         select(Employee).where(Employee.telegram_user_id == user_id).options(joinedload(Employee.role))
     )
     
-    # --- ВИПРАВЛЕНО 3: Краща обробка помилок для callback ---
     if not employee or not employee.role.can_serve_tables:
         if is_callback:
             await message_or_callback.answer("❌ У вас немає прав офіціанта.", show_alert=True)
@@ -155,7 +167,6 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
         else:
             return await message.answer(text_off_shift)
 
-    # ЗМІНЕНО: Логіка запиту M2M
     tables_res = await session.execute(
         select(Table).where(Table.assigned_waiters.any(Employee.id == employee.id)).order_by(Table.name)
     )
@@ -173,10 +184,9 @@ async def show_waiter_tables(message_or_callback: Message | CallbackQuery, sessi
     if is_callback:
         try:
             await message.edit_text(text, reply_markup=kb.as_markup())
-        except TelegramBadRequest: # If message is photo or something else
+        except TelegramBadRequest: 
             await message.delete()
             await message.answer(text, reply_markup=kb.as_markup())
-        # --- ВИПРАВЛЕНО 4: Додаємо answer() для закриття "годинника" у клієнта ---
         await message_or_callback.answer()
     else:
         await message.answer(text, reply_markup=kb.as_markup())
@@ -277,7 +287,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
     @dp_admin.message(F.text == "🚪 Вийти")
     async def logout_handler(message: Message, session: AsyncSession):
-        # ЗМІНЕНО: Додано joinedload(Employee.assigned_tables)
         employee = await session.scalar(
             select(Employee).where(Employee.telegram_user_id == message.from_user.id)
             .options(joinedload(Employee.role), joinedload(Employee.assigned_tables))
@@ -288,7 +297,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
             if employee.role.can_be_assigned:
                  employee.current_order_id = None
             if employee.role.can_serve_tables:
-                # ЗМІНЕНО: Очищуємо список M2M
                 employee.assigned_tables.clear()
 
             await session.commit()
@@ -297,7 +305,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
             await message.answer("❌ Ви не авторизовані.")
 
     @dp_admin.message(F.text.in_({"📦 Мої замовлення", "🍽 Мої столики"}))
-    async def handle_show_items_by_role(message: Message, session: AsyncSession, **kwargs: Dict[str, Any]):
+    async def handle_show_items_by_role(message: Message, session: AsyncSession, state: FSMContext, **kwargs: Dict[str, Any]): # Додано state
         employee = await session.scalar(
             select(Employee).where(Employee.telegram_user_id == message.from_user.id).options(joinedload(Employee.role))
         )
@@ -307,7 +315,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if message.text == "📦 Мої замовлення" and employee.role.can_be_assigned:
             await show_courier_orders(message, session)
         elif message.text == "🍽 Мої столики" and employee.role.can_serve_tables:
-            await show_waiter_tables(message, session)
+            await show_waiter_tables(message, session, state) # Передаємо state
         else:
             await message.answer("❌ Ваша роль не дозволяє переглядати ці дані.")
 
@@ -323,7 +331,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
                 f"Статус: {status_name}\n"
                 f"Адреса: {html_module.escape(address_info)}\n"
                 f"Клієнт: {html_module.escape(order.customer_name)}\n"
-                f"Телефон: {html_module.escape(order.phone_number)}\n" # Номер вже включено тут
+                f"Телефон: {html_module.escape(order.phone_number)}\n" 
                 f"Склад: {html_module.escape(order.products)}\n"
                 f"Сума: {order.total_price} грн\n\n")
         
@@ -339,14 +347,10 @@ def register_courier_handlers(dp_admin: Dispatcher):
         ]
         kb.row(*status_buttons)
         
-        # ВИДАЛЕНО: Кнопка для дзвінка клієнту. Залишаємо лише текст у повідомленні.
-
         if order.is_delivery and order.address:
             encoded_address = quote_plus(order.address)
-            # ВИПРАВЛЕНО: Правильне посилання на карту
             map_query = f"https://maps.google.com/?q={encoded_address}"
             kb.row(InlineKeyboardButton(text="🗺️ Показати на карті", url=map_query))
-
 
         kb.row(InlineKeyboardButton(text="⬅️ До моїх замовлень", callback_data="show_courier_orders_list"))
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
@@ -390,14 +394,17 @@ def register_courier_handlers(dp_admin: Dispatcher):
         await callback.answer(alert_text)
         
         if order.order_type == "in_house":
-            # After changing status, return to the manage view
             await manage_in_house_order_handler(callback, session, order_id=order_id)
         else:
             await show_courier_orders(callback, session)
             
     # --- НОВІ ОБРОБНИКИ ДЛЯ ОФІЦІАНТА ---
+    
+    # ОНОВЛЕНО: Додано state
     @dp_admin.callback_query(F.data.startswith("waiter_view_table_"))
-    async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession):
+    async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
+        await state.clear() # Очищуємо стан на випадок скасування
+        
         table_id = int(callback.data.split("_")[-1])
         table = await session.get(Table, table_id)
         if not table:
@@ -417,37 +424,35 @@ def register_courier_handlers(dp_admin: Dispatcher):
             for order in active_orders:
                 kb.row(InlineKeyboardButton(
                     text=f"Замовлення #{order.id} ({order.status.name}) - {order.total_price} грн",
-                    callback_data=f"waiter_manage_order_{order.id}" # Go directly to management
+                    callback_data=f"waiter_manage_order_{order.id}"
                 ))
+        
+        # НОВА КНОПКА: Створити замовлення
+        kb.row(InlineKeyboardButton(text="➕ Створити замовлення", callback_data=f"waiter_create_order_{table.id}"))
+        
         kb.row(InlineKeyboardButton(text="⬅️ До списку столиків", callback_data="back_to_tables_list"))
         
         await callback.message.edit_text(text, reply_markup=kb.as_markup())
         await callback.answer()
 
     @dp_admin.callback_query(F.data == "back_to_tables_list")
-    async def back_to_waiter_tables(callback: CallbackQuery, session: AsyncSession):
-        await show_waiter_tables(callback, session)
+    async def back_to_waiter_tables(callback: CallbackQuery, session: AsyncSession, state: FSMContext): # Додано state
+        await show_waiter_tables(callback, session, state) # Передаємо state
 
-    # This handler is no longer primary, replaced by the manage handler
     @dp_admin.callback_query(F.data.startswith("waiter_view_order_"))
     async def waiter_view_order_details(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
         await manage_in_house_order_handler(callback, session, order_id=order_id)
         
-    # NEW: Handler and view generator for full order management by waiter
     async def _generate_waiter_order_view(order: Order, session: AsyncSession):
-        """Генерує текст і клавіатуру для управління замовленням офіціантом."""
-        # ЗМІНЕНО: Оновлюємо зв'язки
         await session.refresh(order, ['status', 'accepted_by_waiter'])
         status_name = order.status.name if order.status else 'Невідомий'
         products_formatted = "- " + html_module.escape(order.products or '').replace(", ", "\n- ")
         
-        # ЗМІНЕНО: Додаємо, хто прийняв замовлення
         if order.accepted_by_waiter:
             accepted_by_text = f"<b>Прийнято:</b> {html_module.escape(order.accepted_by_waiter.full_name)}\n\n"
         else:
             accepted_by_text = "<b>Прийнято:</b> <i>Очікує...</i>\n\n"
-
 
         text = (f"<b>Керування замовленням #{order.id}</b> (Стіл: {order.table.name})\n\n"
                 f"<b>Склад:</b>\n{products_formatted}\n\n<b>Сума:</b> {order.total_price} грн\n\n"
@@ -456,7 +461,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         kb = InlineKeyboardBuilder()
         
-        # НОВА ЛОГІКА: Якщо замовлення ще ніким не прийнято, показуємо кнопку "Прийняти"
         if not order.accepted_by_waiter_id:
             kb.row(InlineKeyboardButton(text="✅ Прийняти це замовлення", callback_data=f"waiter_accept_order_{order.id}"))
 
@@ -471,7 +475,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
         for i in range(0, len(status_buttons), 2):
             kb.row(*status_buttons[i:i+2])
 
-        kb.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}"))
+        kb.row(InlineKeyboardButton(text="✏️ Редагувати замовлення", callback_data=f"edit_order_{order.id}")) # TODO: This refers to admin_handlers FSM
         kb.row(InlineKeyboardButton(text="⬅️ Назад до столика", callback_data=f"waiter_view_table_{order.table_id}"))
         
         return text, kb.as_markup()
@@ -481,7 +485,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
         if not order_id:
             order_id = int(callback.data.split("_")[-1])
 
-        # ЗМІНЕНО: Додаємо joinedload(Order.accepted_by_waiter)
         order = await session.get(Order, order_id, options=[joinedload(Order.table), joinedload(Order.status), joinedload(Order.accepted_by_waiter)])
         if not order:
             return await callback.answer("Замовлення не знайдено", show_alert=True)
@@ -492,7 +495,7 @@ def register_courier_handlers(dp_admin: Dispatcher):
             await callback.message.edit_text(text, reply_markup=keyboard)
         except TelegramBadRequest as e:
             if "message is not modified" in str(e):
-                pass # Ignore if the message content is the same
+                pass
             else:
                 logger.warning(f"Could not edit message in manage_in_house_order_handler: {e}. Sending new one.")
                 await callback.message.delete()
@@ -500,7 +503,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         await callback.answer()
 
-    # НОВИЙ ОБРОБНИК для прийняття замовлення
     @dp_admin.callback_query(F.data.startswith("waiter_accept_order_"))
     async def waiter_accept_order(callback: CallbackQuery, session: AsyncSession):
         order_id = int(callback.data.split("_")[-1])
@@ -528,15 +530,12 @@ def register_courier_handlers(dp_admin: Dispatcher):
 
         if order.accepted_by_waiter_id:
             await callback.answer("Це замовлення вже прийнято іншим офіціантом.", show_alert=True)
-            # Оновлюємо вигляд, щоб показати, ХТО прийняв
             await manage_in_house_order_handler(callback, session, order_id=order_id)
             return
 
-        # Приймаємо замовлення
         order.accepted_by_waiter_id = employee.id
         old_status_name = order.status.name
         
-        # Опціонально: автоматично змінюємо статус на "В обробці"
         processing_status = None
         try:
             processing_status = await session.scalar(select(OrderStatus).where(OrderStatus.name == "В обробці").limit(1))
@@ -553,22 +552,18 @@ def register_courier_handlers(dp_admin: Dispatcher):
         await session.commit()
         await callback.answer(f"Ви прийняли замовлення #{order_id}!", show_alert=False)
 
-        # Редагуємо поточне повідомлення (показуємо оновлений вигляд)
         await manage_in_house_order_handler(callback, session, order_id=order_id)
 
-        # Сповіщаємо інших офіціантів цього столика та адмін-чат
         notification_text = (
             f"ℹ️ Замовлення #{order.id} (Стіл: {html.escape(order.table.name)}) "
             f"було прийнято офіціантом: <b>{html.escape(employee.full_name)}</b>"
         )
         
         target_chat_ids = set()
-        # Інші офіціанти
         for w in order.table.assigned_waiters:
             if w.telegram_user_id and w.is_on_shift and w.id != employee.id:
                 target_chat_ids.add(w.telegram_user_id)
         
-        # Адмін-чат
         settings = await session.get(Settings, 1)
         if settings and settings.admin_chat_id:
             try:
@@ -578,13 +573,10 @@ def register_courier_handlers(dp_admin: Dispatcher):
             
         for chat_id in target_chat_ids:
             try:
-                # Надсилаємо сповіщення про те, ХТО прийняв
                 await callback.bot.send_message(chat_id, notification_text)
-                
             except Exception as e:
                 logger.error(f"Не вдалося сповістити {chat_id} про прийняття замовлення #{order_id}: {e}")
 
-        # Також відправляємо клієнту, якщо статус змінився
         if processing_status and processing_status.notify_customer and order.user_id:
             client_bot = dp_admin.get("client_bot")
             if client_bot:
@@ -592,3 +584,245 @@ def register_courier_handlers(dp_admin: Dispatcher):
                     await client_bot.send_message(order.user_id, f"Ваше замовлення #{order.id} прийнято в обробку.")
                 except Exception as e:
                     logger.error(f"Не вдалося сповістити клієнта {order.user_id} про прийняття замовлення: {e}")
+
+    # --- НОВІ ОБРОБНИКИ ДЛЯ FSM СТВОРЕННЯ ЗАМОВЛЕННЯ ---
+
+    async def _display_waiter_cart(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Допоміжна функція для відображення кошика під час створення замовлення."""
+        data = await state.get_data()
+        cart = data.get("cart", {})
+        table_name = data.get("table_name", "N/A")
+        table_id = data.get("table_id")
+
+        text = f"📝 <b>Створення замовлення для: {html_module.escape(table_name)}</b>\n\n<b>Склад:</b>\n"
+        kb = InlineKeyboardBuilder()
+        total_price = 0
+
+        if not cart:
+            text += "<i>Кошик порожній</i>"
+        else:
+            for prod_id, item in cart.items():
+                item_total = item['price'] * item['quantity']
+                total_price += item_total
+                text += f"- {html_module.escape(item['name'])} ({item['quantity']} шт.) = {item_total} грн\n"
+                kb.row(
+                    InlineKeyboardButton(text="➖", callback_data=f"waiter_cart_qnt_{prod_id}_-1"),
+                    InlineKeyboardButton(text=f"{item['quantity']}x {html_module.escape(item['name'])}", callback_data="noop"),
+                    InlineKeyboardButton(text="➕", callback_data=f"waiter_cart_qnt_{prod_id}_1")
+                )
+        
+        text += f"\n\n<b>Загальна сума: {total_price} грн</b>"
+    
+        kb.row(InlineKeyboardButton(text="➕ Додати страву", callback_data="waiter_cart_add_item"))
+        if cart:
+            kb.row(InlineKeyboardButton(text="✅ Оформити замовлення", callback_data="waiter_cart_finalize"))
+        # Кнопка "Скасувати" повертає до перегляду столика
+        kb.row(InlineKeyboardButton(text="⬅️ Скасувати (повернутись до столика)", callback_data=f"waiter_view_table_{table_id}")) 
+    
+        try:
+            await callback.message.edit_text(text, reply_markup=kb.as_markup())
+        except TelegramBadRequest as e:
+            logger.warning(f"Error editing message in _display_waiter_cart: {e}")
+            # Можливо, повідомлення не змінилося
+            pass
+        await callback.answer()
+
+    @dp_admin.callback_query(F.data.startswith("waiter_create_order_"))
+    async def waiter_create_order_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Початок FSM: Створення нового замовлення для столика."""
+        table_id = int(callback.data.split("_")[-1])
+        table = await session.get(Table, table_id)
+        if not table:
+            return await callback.answer("Столик не знайдено!", show_alert=True)
+        
+        await state.set_state(WaiterCreateOrderStates.managing_cart)
+        await state.update_data(cart={}, table_id=table_id, table_name=table.name)
+        
+        await _display_waiter_cart(callback, state, session)
+
+    @dp_admin.callback_query(WaiterCreateOrderStates.managing_cart, F.data == "waiter_cart_add_item")
+    async def waiter_cart_add_item(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Перехід до вибору категорії."""
+        await state.set_state(WaiterCreateOrderStates.choosing_category)
+        
+        categories_res = await session.execute(
+            select(Category).where(Category.show_in_restaurant == True).order_by(Category.sort_order, Category.name)
+        )
+        categories = categories_res.scalars().all()
+        
+        kb = InlineKeyboardBuilder()
+        for cat in categories:
+            kb.add(InlineKeyboardButton(text=cat.name, callback_data=f"waiter_cart_cat_{cat.id}"))
+        kb.adjust(2)
+        kb.row(InlineKeyboardButton(text="⬅️ Назад до кошика", callback_data="waiter_cart_back_to_cart"))
+        
+        await callback.message.edit_text("Виберіть категорію:", reply_markup=kb.as_markup())
+        await callback.answer()
+
+    @dp_admin.callback_query(F.data == "waiter_cart_back_to_cart", WaiterCreateOrderStates.choosing_category)
+    @dp_admin.callback_query(F.data == "waiter_cart_back_to_cart", WaiterCreateOrderStates.choosing_product)
+    async def waiter_cart_back_to_cart(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Повернення до кошика зі станів вибору."""
+        await state.set_state(WaiterCreateOrderStates.managing_cart)
+        await _display_waiter_cart(callback, state, session)
+
+    @dp_admin.callback_query(WaiterCreateOrderStates.choosing_category, F.data.startswith("waiter_cart_cat_"))
+    async def waiter_cart_show_category(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Показ страв у вибраній категорії."""
+        category_id = int(callback.data.split("_")[-1])
+        await state.set_state(WaiterCreateOrderStates.choosing_product)
+        
+        products_res = await session.execute(
+            select(Product).where(
+                Product.category_id == category_id,
+                Product.is_active == True
+            ).order_by(Product.name)
+        )
+        products = products_res.scalars().all()
+        
+        kb = InlineKeyboardBuilder()
+        for prod in products:
+            kb.add(InlineKeyboardButton(text=f"{prod.name} - {prod.price} грн", callback_data=f"waiter_cart_prod_{prod.id}"))
+        kb.adjust(1)
+        kb.row(InlineKeyboardButton(text="⬅️ Назад до категорій", callback_data="waiter_cart_back_to_categories"))
+        
+        await callback.message.edit_text("Виберіть страву:", reply_markup=kb.as_markup())
+        await callback.answer()
+
+    @dp_admin.callback_query(F.data == "waiter_cart_back_to_categories", WaiterCreateOrderStates.choosing_product)
+    async def waiter_cart_back_to_categories(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Повернення до списку категорій."""
+        await waiter_cart_add_item(callback, state, session)
+
+    @dp_admin.callback_query(WaiterCreateOrderStates.choosing_product, F.data.startswith("waiter_cart_prod_"))
+    async def waiter_cart_add_product(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Додавання страви до кошика в FSM."""
+        product_id = int(callback.data.split("_")[-1])
+        product = await session.get(Product, product_id)
+        if not product:
+            return await callback.answer("Страву не знайдено!", show_alert=True)
+        
+        data = await state.get_data()
+        cart = data.get("cart", {})
+        
+        prod_id_str = str(product_id)
+        if prod_id_str in cart:
+            cart[prod_id_str]["quantity"] += 1
+        else:
+            cart[prod_id_str] = {"name": product.name, "price": product.price, "quantity": 1}
+        
+        await state.update_data(cart=cart)
+        await state.set_state(WaiterCreateOrderStates.managing_cart)
+        await _display_waiter_cart(callback, state, session)
+        await callback.answer(f"{product.name} додано до кошика.")
+
+    @dp_admin.callback_query(WaiterCreateOrderStates.managing_cart, F.data.startswith("waiter_cart_qnt_"))
+    async def waiter_cart_change_quantity(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Зміна кількості страви в кошику FSM."""
+        prod_id, change = callback.data.split("_")[3:]
+        change = int(change)
+        
+        data = await state.get_data()
+        cart = data.get("cart", {})
+        
+        if prod_id not in cart:
+            return await callback.answer("Помилка: страви немає в кошику.")
+        
+        cart[prod_id]["quantity"] += change
+        
+        if cart[prod_id]["quantity"] <= 0:
+            del cart[prod_id]
+            await callback.answer("Страву видалено.")
+        else:
+            await callback.answer()
+        
+        await state.update_data(cart=cart)
+        await _display_waiter_cart(callback, state, session)
+
+    @dp_admin.callback_query(WaiterCreateOrderStates.managing_cart, F.data == "waiter_cart_finalize")
+    async def waiter_cart_finalize(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+        """Створення замовлення та збереження в БД."""
+        data = await state.get_data()
+        cart = data.get("cart", {})
+        table_id = data.get("table_id")
+        table_name = data.get("table_name")
+        
+        if not cart:
+            return await callback.answer("Кошик порожній!", show_alert=True)
+        
+        employee = await session.scalar(
+            select(Employee).where(Employee.telegram_user_id == callback.from_user.id)
+        )
+        if not employee:
+            return await callback.answer("Вас не знайдено в системі.", show_alert=True)
+
+        total_price = 0
+        product_strings = []
+        for item in cart.values():
+            total_price += item['price'] * item['quantity']
+            product_strings.append(f"{item['name']} x {item['quantity']}")
+        products_str = ", ".join(product_strings)
+
+        # Знаходимо статус "В обробці"
+        processing_status = await session.scalar(select(OrderStatus).where(OrderStatus.name == "В обробці").limit(1))
+        status_id_to_set = processing_status.id if processing_status else 1 # Стандартно "Новий"
+        actor_info = f"Офіціант (створив): {employee.full_name}"
+
+        order = Order(
+            customer_name=f"Стіл: {table_name}",
+            phone_number=f"table_{table_id}",
+            address=None,
+            products=products_str,
+            total_price=total_price,
+            is_delivery=False,
+            delivery_time="In House",
+            order_type="in_house",
+            table_id=table_id,
+            status_id=status_id_to_set, 
+            accepted_by_waiter_id=employee.id # Приймається автоматично
+        )
+        session.add(order)
+        await session.commit()
+        await session.refresh(order)
+        
+        # Додаємо запис в історію
+        history_entry = OrderStatusHistory(
+            order_id=order.id,
+            status_id=order.status_id,
+            actor_info=actor_info
+        )
+        session.add(history_entry)
+        await session.commit()
+        
+        await callback.answer(f"Замовлення #{order.id} створено!", show_alert=True)
+        
+        # Сповіщення в адмін-чат (кухню)
+        admin_bot = dp_admin.get("bot_instance")
+        if admin_bot:
+            settings = await session.get(Settings, 1)
+            if settings and settings.admin_chat_id:
+                try:
+                    admin_chat_id = int(settings.admin_chat_id)
+                    
+                    order_details_text = (
+                        f"✅ <b>Замовлення #{order.id} СТВОРЕНО ОФІЦІАНТОМ</b>\n"
+                        f"<b>Стіл:</b> {aiogram_html.bold(table_name)}\n"
+                        f"<b>Офіціант:</b> {aiogram_html.quote(employee.full_name)}\n\n"
+                        f"<b>Склад:</b>\n- " + aiogram_html.quote(products_str.replace(", ", "\n- ")) +
+                        f"\n\n<b>Сума:</b> {total_price} грн"
+                    )
+                    
+                    kb_admin = InlineKeyboardBuilder()
+                    kb_admin.row(InlineKeyboardButton(text="⚙️ Керувати замовленням", callback_data=f"waiter_manage_order_{order.id}"))
+                    
+                    await admin_bot.send_message(
+                        admin_chat_id, 
+                        order_details_text,
+                        reply_markup=kb_admin.as_markup()
+                    )
+                except Exception as e:
+                    logger.error(f"Не вдалося надіслати сповіщення (від офіціанта) в адмін-чат {settings.admin_chat_id}: {e}")
+
+        # Повертаємо офіціанта до перегляду столика
+        await state.clear()
+        await show_waiter_table_orders(callback, session, state)
