@@ -297,7 +297,8 @@ def register_courier_handlers(dp_admin: Dispatcher):
             if employee.role.can_be_assigned:
                  employee.current_order_id = None
             if employee.role.can_serve_tables:
-                employee.assigned_tables.clear()
+            # employee.assigned_tables.clear() # НЕПРАВИЛЬНО: Вихід з системи не повинен скасовувати призначення.
+            pass
 
             await session.commit()
             await message.answer("👋 Ви вийшли з системи.", reply_markup=get_staff_login_keyboard())
