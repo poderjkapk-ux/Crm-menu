@@ -668,10 +668,7 @@ async def start_bot(client_dp: Dispatcher, admin_dp: Dispatcher):
             client_dp["session_factory"] = async_session_maker
             admin_dp["session_factory"] = async_session_maker
 
-            menu_items_res = await session.execute(sa.select(MenuItem.title).where(MenuItem.show_in_telegram == True))
-            menu_titles = [title.strip() for title in menu_items_res.scalars().all() if title]
-            if menu_titles:
-                client_dp.message.register(handle_dynamic_menu_item, F.text.in_(menu_titles))
+            client_dp.message.register(handle_dynamic_menu_item, F.text)
 
         register_admin_handlers(admin_dp)
         register_courier_handlers(admin_dp)
