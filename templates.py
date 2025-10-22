@@ -329,6 +329,11 @@ ADMIN_HTML_TEMPLATE = """
 """
 
 # НОВИЙ ШАБЛОН ДЛЯ СТОРІНКИ "СТОЛИКИ"
+# templates.py
+
+# ... (код до ADMIN_TABLES_BODY) ...
+
+# ОНОВЛЕНИЙ ШАБЛОН ДЛЯ СТОРІНКИ "СТОЛИКИ"
 ADMIN_TABLES_BODY = """
 <style>
     .qr-code-img {{
@@ -337,6 +342,11 @@ ADMIN_TABLES_BODY = """
         border: 1px solid var(--border-light);
         padding: 5px;
         background: white;
+    }}
+    /* Стиль для селекта з множинним вибором */
+    #waiter_ids_select {{
+        height: 250px;
+        width: 100%;
     }}
 </style>
 <div class="card">
@@ -355,7 +365,7 @@ ADMIN_TABLES_BODY = """
                     <th>ID</th>
                     <th>Назва</th>
                     <th>QR-код</th>
-                    <th>Закріплений офіціант</th>
+                    <th>Закріплені офіціанти</th>
                     <th>Дії</th>
                 </tr>
             </thead>
@@ -368,35 +378,41 @@ ADMIN_TABLES_BODY = """
 <div class="modal-overlay" id="assign-waiter-modal">
     <div class="modal">
         <div class="modal-header">
-            <h4 id="modal-title">Призначити офіціанта для столика</h4>
+            <h4 id="modal-title">Призначити офіціантів для столика</h4>
             <button type="button" class="close-button" onclick="closeModal()">&times;</button>
         </div>
         <div class="modal-body">
             <form id="assign-waiter-form" method="post">
-                <label for="waiter_id">Виберіть офіціанта (на зміні):</label>
-                <select id="waiter_id" name="waiter_id" required>
+                <label for="waiter_ids_select">Виберіть офіціантів (на зміні):</label>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;">(Утримуйте Ctrl/Cmd для вибору кількох)</p>
+                <select id="waiter_ids_select" name="waiter_ids" multiple>
                     </select>
-                <br>
+                <br><br>
                 <button type="submit">Призначити</button>
             </form>
         </div>
     </div>
 </div>
 <script>
-function openAssignWaiterModal(tableId, tableName, waiters) {{
+// ОНОВЛЕНО: Функція тепер приймає 'assignedWaiterIds'
+function openAssignWaiterModal(tableId, tableName, waiters, assignedWaiterIds) {{
     const modal = document.getElementById('assign-waiter-modal');
     const form = document.getElementById('assign-waiter-form');
-    const select = document.getElementById('waiter_id');
+    const select = document.getElementById('waiter_ids_select');
     const title = document.getElementById('modal-title');
     
-    title.innerText = `Призначити офіціанта для столика "${{tableName}}"`;
+    title.innerText = `Призначити офіціантів для столика "${{tableName}}"`;
     form.action = `/admin/tables/assign_waiter/${{tableId}}`;
-    select.innerHTML = '<option value="0">-- Зняти офіціанта --</option>'; // Опция для снятия назначения
+    select.innerHTML = ''; // Очищуємо список
     
     waiters.forEach(waiter => {{
         const option = document.createElement('option');
         option.value = waiter.id;
         option.textContent = waiter.full_name;
+        // Перевіряємо, чи цей офіціант вже призначений
+        if (assignedWaiterIds.includes(waiter.id)) {{
+            option.selected = true;
+        }}
         select.appendChild(option);
     }});
     
@@ -417,7 +433,7 @@ window.onclick = function(event) {{
 </script>
 """
 
-# ... (решта коду у файлі templates.py залишається без змін) ...
+# ... (решта коду у файлі templates.py) ...
 # ВИПРАВЛЕНИЙ ШАБЛОН ДЛЯ ФОРМИ ЗАМОВЛЕННЯ
 ADMIN_ORDER_FORM_BODY = """
 <style>
