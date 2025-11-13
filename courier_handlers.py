@@ -12,7 +12,7 @@ from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload
-from typing import Dict, Any
+from typing import Dict, Any, Optional # Додано Optional
 from urllib.parse import quote_plus
 import re 
 
@@ -441,12 +441,18 @@ def register_courier_handlers(dp_admin: Dispatcher):
             
     # --- НОВІ ОБРОБНИКИ ДЛЯ ОФІЦІАНТА ---
     
-    # ОНОВЛЕНО: Додано state
+    # ВИПРАВЛЕНО: Додано table_id=None та логіку отримання ID
     @dp_admin.callback_query(F.data.startswith("waiter_view_table_"))
-    async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
+    async def show_waiter_table_orders(callback: CallbackQuery, session: AsyncSession, state: FSMContext, table_id: int = None):
         await state.clear() # Очищуємо стан на випадок скасування
         
-        table_id = int(callback.data.split("_")[-1])
+        if table_id is None:
+            try:
+                table_id = int(callback.data.split("_")[-1])
+            except ValueError:
+                logger.error(f"Could not extract table_id from callback: {callback.data}")
+                return await callback.answer("Помилка: некоректні дані.", show_alert=True)
+        
         table = await session.get(Table, table_id)
         if not table:
             return await callback.answer("Столик не знайдено!", show_alert=True)
@@ -473,7 +479,11 @@ def register_courier_handlers(dp_admin: Dispatcher):
         
         kb.row(InlineKeyboardButton(text="⬅️ До списку столиків", callback_data="back_to_tables_list"))
         
-        await callback.message.edit_text(text, reply_markup=kb.as_markup())
+        try:
+            await callback.message.edit_text(text, reply_markup=kb.as_markup())
+        except TelegramBadRequest:
+            await callback.message.delete()
+            await callback.message.answer(text, reply_markup=kb.as_markup())
         await callback.answer()
 
     @dp_admin.callback_query(F.data == "back_to_tables_list")
@@ -830,6 +840,6 @@ def register_courier_handlers(dp_admin: Dispatcher):
                 except Exception as e:
                     logger.error(f"Не вдалося надіслати сповіщення (від офіціанта) в адмін-чат {settings.admin_chat_id}: {e}")
 
-        # Повертаємо офіціанта до перегляду столика
+        # ВИПРАВЛЕНО: Повертаємо офіціанта до перегляду столика, передаючи table_id явно
         await state.clear()
-        await show_waiter_table_orders(callback, session, state)
+        await show_waiter_table_orders(callback, session, state, table_id=table_id)
